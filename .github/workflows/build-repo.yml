@@ -18,27 +18,32 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dpkg-dev & bzip2
-        run: sudo apt-get update && sudo apt-get install -y dpkg-dev bzip2 gzip
+      - name: Install dpkg-dev, bzip2 & zstd
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev bzip2 gzip zstd
 
-      - name: Build Packages Index
+      - name: Build Packages Index & Release
         working-directory: ./public
         run: |
           mkdir -p debs2
-          if [ -z "$(ls -A debs2/*.deb 2>/dev/null)" ]; then
-            for arch in iphoneos-arm iphoneos-arm64 iphoneos-arm64e; do
-              mkdir -p /tmp/pkg_${arch}/DEBIAN
-              printf "Package: com.xemyoutube\nName: XemYouTube\nDescription: Tweak xem YouTube va da nhiem danh cho CarPlay\nDepends: firmware (>= 15.0), mobilesubstrate, preferenceloader\nConflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf\nMaintainer: XemYouTube\nAuthor: XemYouTube\nSection: Tweaks\nIcon: https://xemyoutube.pages.dev/xemyoutube.png\nArchitecture: ${arch}\nVersion: 2.1.1\nInstalled-Size: 10500\nTag: cydia::commercial\nSileoDepiction: https://xemyoutube.pages.dev/api/sp2/depiction\n" > /tmp/pkg_${arch}/DEBIAN/control
-              dpkg-deb --root-owner-group --build /tmp/pkg_${arch} "debs2/com.xemyoutube_2.1.1_${arch}.deb"
-            done
-          fi
           dpkg-scanpackages -m debs2 /dev/null > Packages
           gzip -c9 Packages > Packages.gz
           bzip2 -c9 Packages > Packages.bz2
+          zstd -q -c19 Packages > Packages.zst
+
+          cat << 'EOF' > Release
+          Origin: XemYouTube
+          Label: XemYouTube
+          Suite: stable
+          Version: 1.0
+          Codename: ios
+          Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
+          Components: main
+          Description: Kho luu tru chinh thuc cua XemYouTube Tweak
+          EOF
 
       - name: Commit & Push updated Packages index
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
-          git add public/debs2 public/Packages public/Packages.gz public/Packages.bz2
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: auto-update APT Packages index" && git push)
+          git add public/Packages public/Packages.gz public/Packages.bz2 public/Packages.zst public/Release
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: add Packages.zst and Release for Sileo" && git push)
