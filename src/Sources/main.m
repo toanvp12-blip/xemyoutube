@@ -107,7 +107,7 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
     NSDictionary *dict = [ud dictionaryRepresentation];
     for (id key in dict) [ud removeObjectForKey:key];
     [ud synchronize];
-    [self init];
+    (void)[self init];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
 @end
