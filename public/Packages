@@ -2,29 +2,13 @@ Package: com.xemyoutube
 Version: 2.1.3
 Architecture: iphoneos-arm
 Maintainer: XemYouTube
-Installed-Size: 216
+Installed-Size: 252
 Depends: firmware (>= 15.0)
 Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
-Size: 13724
-MD5sum: 954d602713bc902af4c8e60279fdafca
-SHA1: 62d673b297fc543fc7511dd46acd814af0323bbc
-SHA256: b5ddcae48c3b80ccdabb14d5c70fc398a61ed3edc175145d9def7fa6de567ca8
-Section: Tweaks
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
-Author: XemYouTube
-Name: XemYouTube
-
-Package: com.xemyoutube
-Version: 2.1.3
-Architecture: iphoneos-arm64
-Maintainer: XemYouTube
-Installed-Size: 216
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
-Size: 13814
-MD5sum: 45684ed5646c3751658b6e4e6273bedc
-SHA1: ae1fad729fabbfd6202855cfb192661693f9a80f
-SHA256: ab0a757552bb6832ee11607616ca99b96ba1a8936f8e571876fbe0eb9586e859
+Size: 25886
+MD5sum: 27db57adb8f61586cb690108bffebcdd
+SHA1: 51236f60e991432c03bbaec069a71a35881ad9a1
+SHA256: 91626e7e09c7532554bef9c52d44941a1c4b8967b3eac913e8ee2c16791d35f7
 Section: Tweaks
 Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
 Author: XemYouTube
@@ -34,13 +18,29 @@ Package: com.xemyoutube
 Version: 2.1.3
 Architecture: iphoneos-arm64e
 Maintainer: XemYouTube
-Installed-Size: 216
+Installed-Size: 252
 Depends: firmware (>= 15.0)
 Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
-Size: 14998
-MD5sum: 85495a676facf0392da479ab9c2cdaaf
-SHA1: c4dab7873c03c24dc0e2da9265557b0f73bd3810
-SHA256: ab337d4dd9e3925f55cceeb89874f54f9532e32056c6ab51c6141f233a844ee4
+Size: 28842
+MD5sum: d7dde84a028ca03b548d371888506088
+SHA1: 2060e52388e66529555c9dbce05c9bbd5f25a785
+SHA256: 64dc212a8ba15c15ab04d0691b97a0042efcfa545cbf6732c30e08e125aa153a
+Section: Tweaks
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
+Author: XemYouTube
+Name: XemYouTube
+
+Package: com.xemyoutube
+Version: 2.1.3
+Architecture: iphoneos-arm64
+Maintainer: XemYouTube
+Installed-Size: 252
+Depends: firmware (>= 15.0)
+Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
+Size: 25924
+MD5sum: 426ee2ae185fa6406af9a5f0b3234486
+SHA1: e1361330cc408b635b6e681e0827414916a3459d
+SHA256: 30c68cadbb6d1c7654c06f20d26637f51ee9d0f0dfb91ac1b62d6d3172a505f5
 Section: Tweaks
 Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
 Author: XemYouTube
