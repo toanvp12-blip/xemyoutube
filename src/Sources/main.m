@@ -1568,7 +1568,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         [ac addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     } else {
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"SidePlay2 2.5.1" message:@"Đã kích hoạt đầy đủ tính năng Tweak + Multi-Window." preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"SidePlay2 2.5.2" message:@"Đã kích hoạt đầy đủ tính năng Tweak + Multi-Window." preferredStyle:UIAlertControllerStyleAlert];
         [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     }
@@ -1596,7 +1596,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     return 2;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    return s == 4 ? @"SidePlay2 2.5.1 (MobileSubstrate + Multi-Window)" : nil;
+    return s == 4 ? @"SidePlay2 2.5.2 (MobileSubstrate + Multi-Window)" : nil;
 }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     if (ip.section == 0) {

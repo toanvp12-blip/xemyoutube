@@ -1,4 +1,8 @@
 #!/bin/sh
+rm -f /Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
+rm -f /var/jb/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
+rm -f /var/containers/Bundle/Application/.jbroot-*/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
+
 killall -9 XemYouTube >/dev/null 2>&1 || true
 if [ -x /var/jb/usr/bin/uicache ]; then
     /var/jb/usr/bin/uicache -p /var/jb/Applications/XemYouTube.app >/dev/null 2>&1 || /var/jb/usr/bin/uicache -a >/dev/null 2>&1 || true
