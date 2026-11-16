@@ -25,18 +25,18 @@ mkdir -p ../public/debs2
 
 # 1. Bien dich Rootful (iphoneos-arm)
 rm -rf packages && make clean && make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.5_iphoneos-arm.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.6_iphoneos-arm.deb
 
 # 2. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
 rm -rf packages && make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.5_iphoneos-arm64.deb
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.5_iphoneos-arm64e.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.6_iphoneos-arm64.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.6_iphoneos-arm64e.deb
 
 cd ../public/debs2
 mkdir -p tmp_rh
-dpkg-deb -R com.xemyoutube_2.1.5_iphoneos-arm64e.deb tmp_rh
+dpkg-deb -R com.xemyoutube_2.1.6_iphoneos-arm64e.deb tmp_rh
 sed -i 's/^Architecture.*/Architecture: iphoneos-arm64e/' tmp_rh/DEBIAN/control
-dpkg-deb -b tmp_rh com.xemyoutube_2.1.5_iphoneos-arm64e.deb
+dpkg-deb -b tmp_rh com.xemyoutube_2.1.6_iphoneos-arm64e.deb
 rm -rf tmp_rh
 
 cd ..

@@ -4,14 +4,14 @@
 #import <CoreLocation/CoreLocation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <dlfcn.h>
 
-#pragma mark - Private API Interfaces (Quet danh sach app & lay icon that tren iOS)
+#pragma mark - Private APIs (LSApplicationWorkspace + FrontBoard Scene Hosting)
 
 @interface LSApplicationProxy : NSObject
 @property (nonatomic, readonly) NSString *applicationIdentifier;
 @property (nonatomic, readonly) NSString *localizedName;
 @property (nonatomic, readonly) NSString *applicationType;
-@property (nonatomic, readonly) NSArray<NSString *> *appTags;
 @end
 
 @interface LSApplicationWorkspace : NSObject
@@ -24,7 +24,32 @@
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
 @end
 
-#pragma mark - Model App tren dien thoai
+// FrontBoard Scene Hosting interfaces (nhung truc tiep giao dien ung dung that vao o cua so)
+@interface FBSceneManager : NSObject
++ (instancetype)sharedInstance;
+- (NSSet *)scenes;
+- (id)sceneWithIdentifier:(NSString *)identifier;
+@end
+
+@interface FBScene : NSObject
+@property (nonatomic, readonly, copy) NSString *identifier;
+- (id)uiPresentationManager;
+- (id)settings;
+- (void)updateSettingsWithBlock:(void (^)(id settings))block;
+@end
+
+@interface UIScenePresentationManager : NSObject
+- (UIView *)createPresenterWithIdentifier:(NSString *)identifier;
+@end
+
+@interface UIScenePresenter : NSObject
+@property (nonatomic, readonly) UIView *presentationView;
+- (void)activate;
+- (void)deactivate;
+- (void)invalidate;
+@end
+
+#pragma mark - App Model & Quet App Tren May
 
 @interface InstalledAppItem : NSObject
 @property (nonatomic, copy) NSString *bundleID;
@@ -36,154 +61,164 @@
 @implementation InstalledAppItem
 @end
 
-static NSString *FallbackWebURLForBundle(NSString *bundleID, NSString *name) {
-    NSString *lower = [bundleID.lowercaseString stringByAppendingFormat:@" %@", name.lowercaseString];
-    if ([lower containsString:@"youtube"]) return @"https://m.youtube.com";
-    if ([lower containsString:@"vietmap"]) return @"https://maps.vietmap.vn";
-    if ([lower containsString:@"maps"] || [lower containsString:@"google"]) return @"https://www.google.com/maps";
-    if ([lower containsString:@"zing"]) return @"https://zingmp3.vn";
-    if ([lower containsString:@"spotify"]) return @"https://open.spotify.com";
-    if ([lower containsString:@"tiktok"]) return @"https://www.tiktok.com";
-    if ([lower containsString:@"zalo"]) return @"https://chat.zalo.me";
-    if ([lower containsString:@"telegram"]) return @"https://web.telegram.org";
-    if ([lower containsString:@"vtv"]) return @"https://vtvgo.vn";
+static NSString *FallbackURLForApp(NSString *bundleID, NSString *name) {
+    NSString *key = [NSString stringWithFormat:@"%@ %@", bundleID.lowercaseString, name.lowercaseString];
+    if ([key containsString:@"youtube"]) return @"https://m.youtube.com";
+    if ([key containsString:@"vietmap"]) return @"https://maps.vietmap.vn";
+    if ([key containsString:@"maps"] || [key containsString:@"google"]) return @"https://www.google.com/maps";
+    if ([key containsString:@"zing"]) return @"https://zingmp3.vn";
+    if ([key containsString:@"spotify"]) return @"https://open.spotify.com";
+    if ([key containsString:@"tiktok"]) return @"https://www.tiktok.com";
+    if ([key containsString:@"zalo"]) return @"https://chat.zalo.me";
+    if ([key containsString:@"telegram"]) return @"https://web.telegram.org";
+    if ([key containsString:@"vtv"]) return @"https://vtvgo.vn";
     return @"https://www.google.com";
 }
 
-static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
-    NSMutableArray<InstalledAppItem *> *result = [NSMutableArray array];
+static NSArray<InstalledAppItem *> *GetInstalledApps(void) {
+    NSMutableArray<InstalledAppItem *> *list = [NSMutableArray array];
     Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
     if (wsClass) {
-        id workspace = [wsClass defaultWorkspace];
-        NSArray *apps = [workspace allInstalledApplications];
-        NSSet *allowedSystemIDs = [NSSet setWithArray:@[
+        id ws = [wsClass defaultWorkspace];
+        NSArray *all = [ws allInstalledApplications];
+        NSSet *sysKeep = [NSSet setWithArray:@[
             @"com.apple.Maps", @"com.apple.Music", @"com.apple.mobilesafari",
             @"com.apple.weather", @"com.apple.podcasts", @"com.apple.mobilemail"
         ]];
-
-        for (id proxy in apps) {
-            NSString *bundleID = [proxy valueForKey:@"applicationIdentifier"];
-            NSString *appType = [proxy valueForKey:@"applicationType"];
+        for (id proxy in all) {
+            NSString *bid = [proxy valueForKey:@"applicationIdentifier"];
+            NSString *type = [proxy valueForKey:@"applicationType"];
             NSString *name = [proxy valueForKey:@"localizedName"];
-            if (!bundleID || !name || name.length == 0) continue;
-            if ([bundleID isEqualToString:@"com.xemyoutube"]) continue;
-
-            BOOL isUserApp = [appType isEqualToString:@"User"];
-            BOOL isAllowedSys = [allowedSystemIDs containsObject:bundleID];
-            if (!isUserApp && !isAllowedSys) continue;
+            if (!bid || !name || name.length == 0) continue;
+            if ([bid isEqualToString:@"com.xemyoutube"]) continue;
+            if (![type isEqualToString:@"User"] && ![sysKeep containsObject:bid]) continue;
 
             InstalledAppItem *item = [[InstalledAppItem alloc] init];
-            item.bundleID = bundleID;
+            item.bundleID = bid;
             item.name = name;
-            item.fallbackURL = FallbackWebURLForBundle(bundleID, name);
-
+            item.fallbackURL = FallbackURLForApp(bid, name);
             if ([UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)]) {
-                item.icon = [UIImage _applicationIconImageForBundleIdentifier:bundleID format:2 scale:[UIScreen mainScreen].scale];
+                item.icon = [UIImage _applicationIconImageForBundleIdentifier:bid format:2 scale:[UIScreen mainScreen].scale];
             }
-            if (!item.icon) {
-                item.icon = [UIImage systemImageNamed:@"app.fill"];
-            }
-            [result addObject:item];
+            if (!item.icon) item.icon = [UIImage systemImageNamed:@"app.fill"];
+            [list addObject:item];
         }
     }
-
-    [result sortUsingComparator:^NSComparisonResult(InstalledAppItem *a, InstalledAppItem *b) {
+    [list sortUsingComparator:^NSComparisonResult(InstalledAppItem *a, InstalledAppItem *b) {
         return [a.name localizedCaseInsensitiveCompare:b.name];
     }];
-
-    if (result.count == 0) {
-        NSArray *defaults = @[
+    if (list.count == 0) {
+        NSArray *fallback = @[
             @[@"com.google.ios.youtube", @"YouTube", @"play.rectangle.fill", @"https://m.youtube.com"],
             @[@"vn.vietmap.live", @"VIETMAP Live", @"map.fill", @"https://maps.vietmap.vn"],
             @[@"com.google.Maps", @"Google Maps", @"location.fill", @"https://www.google.com/maps"],
-            @[@"com.zing.mp3", @"Zing MP3", @"music.note", @"https://zingmp3.vn"],
-            @[@"com.apple.mobilesafari", @"Safari", @"safari.fill", @"https://www.google.com"]
+            @[@"com.zing.mp3", @"Zing MP3", @"music.note", @"https://zingmp3.vn"]
         ];
-        for (NSArray *d in defaults) {
+        for (NSArray *f in fallback) {
             InstalledAppItem *item = [[InstalledAppItem alloc] init];
-            item.bundleID = d[0];
-            item.name = d[1];
-            item.icon = [UIImage systemImageNamed:d[2]];
-            item.fallbackURL = d[3];
-            [result addObject:item];
+            item.bundleID = f[0];
+            item.name = f[1];
+            item.icon = [UIImage systemImageNamed:f[2]];
+            item.fallbackURL = f[3];
+            [list addObject:item];
         }
     }
-    return result;
+    return list;
 }
 
-#pragma mark - Khung Hien Thi 1 O Ung Dung (PaneView: Thanh tieu de 3 cham + WebView/App Launcher)
+#pragma mark - 1 O Cua So Ung Dung (Nhung Scene that + Thanh Tab App + 3 Nut Vang/Xanh/Do)
 
-@class AppPaneView;
-@protocol AppPaneViewDelegate <NSObject>
-- (void)paneViewDidRequestSelectApp:(AppPaneView *)paneView;
-- (void)paneViewDidRequestExpand:(AppPaneView *)paneView;
-- (void)paneViewDidRequestReload:(AppPaneView *)paneView;
+@class AppWindowPane;
+@protocol AppWindowPaneDelegate <NSObject>
+- (void)windowPaneDidTapTitle:(AppWindowPane *)pane;
+- (void)windowPaneDidTapLayout:(AppWindowPane *)pane;
+- (void)windowPaneDidTapClose:(AppWindowPane *)pane;
 @end
 
-@interface AppPaneView : UIView
-@property (nonatomic, assign) NSInteger paneIndex; // 1 hoac 2
-@property (nonatomic, weak) id<AppPaneViewDelegate> delegate;
-@property (nonatomic, strong) UIImageView *appIconView;
-@property (nonatomic, strong) UILabel *appTitleLabel;
+@interface AppWindowPane : UIView
+@property (nonatomic, assign) NSInteger slotIndex;
+@property (nonatomic, weak) id<AppWindowPaneDelegate> delegate;
+@property (nonatomic, strong) UIImageView *iconView;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UIStackView *recentTabsStack;
+@property (nonatomic, strong) UIView *contentHostView;
 @property (nonatomic, strong) WKWebView *webView;
-@property (nonatomic, copy) NSString *currentBundleID;
-@property (nonatomic, copy) NSString *currentAppName;
-- (void)loadAppWithBundleID:(NSString *)bundleID name:(NSString *)name icon:(UIImage *)icon url:(NSString *)urlStr;
+@property (nonatomic, strong) id activeScenePresenter;
+@property (nonatomic, strong) InstalledAppItem *currentApp;
+@property (nonatomic, strong) NSMutableArray<InstalledAppItem *> *recentApps;
+- (instancetype)initWithSlotIndex:(NSInteger)slot;
+- (void)hostApplication:(InstalledAppItem *)app;
 @end
 
-@implementation AppPaneView
+@implementation AppWindowPane
 
-- (instancetype)initWithPaneIndex:(NSInteger)index {
+- (instancetype)initWithSlotIndex:(NSInteger)slot {
     self = [super initWithFrame:CGRectZero];
     if (self) {
-        self.paneIndex = index;
+        self.slotIndex = slot;
+        self.recentApps = [NSMutableArray array];
         self.backgroundColor = [UIColor systemBackgroundColor];
         self.clipsToBounds = YES;
-        [self setupUI];
+        [self buildUI];
     }
     return self;
 }
 
-- (void)setupUI {
-    UIView *header = [[UIView alloc] init];
-    header.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    header.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:header];
+- (void)buildUI {
+    // 1. Thanh tieu de tren cung (Icon + Ten app + 3 nut tron Vang/Xanh/Do)
+    UIView *topBar = [[UIView alloc] init];
+    topBar.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    topBar.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:topBar];
 
-    self.appIconView = [[UIImageView alloc] init];
-    self.appIconView.layer.cornerRadius = 5;
-    self.appIconView.clipsToBounds = YES;
-    self.appIconView.contentMode = UIViewContentModeScaleAspectFit;
-    self.appIconView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.iconView = [[UIImageView alloc] init];
+    self.iconView.layer.cornerRadius = 5;
+    self.iconView.clipsToBounds = YES;
+    self.iconView.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.appTitleLabel = [[UILabel alloc] init];
-    self.appTitleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
-    self.appTitleLabel.textColor = [UIColor labelColor];
-    self.appTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.titleLabel = [[UILabel alloc] init];
+    self.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIButton *selectBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [selectBtn setImage:[UIImage systemImageNamed:@"chevron.down"] forState:UIControlStateNormal];
-    selectBtn.tintColor = [UIColor secondaryLabelColor];
-    selectBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [selectBtn addTarget:self action:@selector(onSelectTap) forControlEvents:UIControlEventTouchUpInside];
+    UIImageView *chev = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.down"]];
+    chev.tintColor = [UIColor secondaryLabelColor];
+    chev.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // 3 nut tron kieu thanh cua so (Vang = Doi app, Xanh = Mo app that, Do = Tai lai)
-    UIButton *yellowDot = [self makeDotButtonWithColor:[UIColor systemYellowColor] action:@selector(onSelectTap)];
-    UIButton *greenDot = [self makeDotButtonWithColor:[UIColor systemGreenColor] action:@selector(onExpandTap)];
-    UIButton *redDot = [self makeDotButtonWithColor:[UIColor systemRedColor] action:@selector(onReloadTap)];
+    UIButton *btnYellow = [self dotBtn:[UIColor systemYellowColor] sel:@selector(onLayout)];
+    UIButton *btnGreen = [self dotBtn:[UIColor systemGreenColor] sel:@selector(onLayout)];
+    UIButton *btnRed = [self dotBtn:[UIColor systemRedColor] sel:@selector(onClose)];
 
-    UIStackView *dots = [[UIStackView alloc] initWithArrangedSubviews:@[yellowDot, greenDot, redDot]];
-    dots.axis = UILayoutConstraintAxisHorizontal;
+    UIStackView *dots = [[UIStackView alloc] initWithArrangedSubviews:@[btnYellow, btnGreen, btnRed]];
     dots.spacing = 6;
     dots.translatesAutoresizingMaskIntoConstraints = NO;
 
-    [header addSubview:self.appIconView];
-    [header addSubview:self.appTitleLabel];
-    [header addSubview:selectBtn];
-    [header addSubview:dots];
+    [topBar addSubview:self.iconView];
+    [topBar addSubview:self.titleLabel];
+    [topBar addSubview:chev];
+    [topBar addSubview:dots];
 
-    UITapGestureRecognizer *headerTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onSelectTap)];
-    [header addGestureRecognizer:headerTap];
+    UITapGestureRecognizer *tapTitle = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onTitle)];
+    [topBar addGestureRecognizer:tapTitle];
+
+    // 2. Thanh tab chuyen nhanh app da mo trong o (giong Googl... | YouT... | VIET...)
+    UIScrollView *tabStrip = [[UIScrollView alloc] init];
+    tabStrip.backgroundColor = [UIColor systemBackgroundColor];
+    tabStrip.showsHorizontalScrollIndicator = NO;
+    tabStrip.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:tabStrip];
+
+    self.recentTabsStack = [[UIStackView alloc] init];
+    self.recentTabsStack.axis = UILayoutConstraintAxisHorizontal;
+    self.recentTabsStack.spacing = 6;
+    self.recentTabsStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [tabStrip addSubview:self.recentTabsStack];
+
+    // 3. Khung noi dung chinh (nhung Scene app that hoac WebView)
+    self.contentHostView = [[UIView alloc] init];
+    self.contentHostView.backgroundColor = [UIColor blackColor];
+    self.contentHostView.clipsToBounds = YES;
+    self.contentHostView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:self.contentHostView];
 
     WKWebViewConfiguration *cfg = [[WKWebViewConfiguration alloc] init];
     cfg.allowsInlineMediaPlayback = YES;
@@ -191,77 +226,371 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
     self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:cfg];
     self.webView.customUserAgent = @"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
     self.webView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:self.webView];
+    [self.contentHostView addSubview:self.webView];
 
     [NSLayoutConstraint activateConstraints:@[
-        [header.topAnchor constraintEqualToAnchor:self.topAnchor],
-        [header.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [header.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [header.heightAnchor constraintEqualToConstant:32],
+        [topBar.topAnchor constraintEqualToAnchor:self.topAnchor],
+        [topBar.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [topBar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [topBar.heightAnchor constraintEqualToConstant:30],
 
-        [self.appIconView.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:8],
-        [self.appIconView.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [self.appIconView.widthAnchor constraintEqualToConstant:18],
-        [self.appIconView.heightAnchor constraintEqualToConstant:18],
+        [self.iconView.leadingAnchor constraintEqualToAnchor:topBar.leadingAnchor constant:8],
+        [self.iconView.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
+        [self.iconView.widthAnchor constraintEqualToConstant:17],
+        [self.iconView.heightAnchor constraintEqualToConstant:17],
 
-        [self.appTitleLabel.leadingAnchor constraintEqualToAnchor:self.appIconView.trailingAnchor constant:6],
-        [self.appTitleLabel.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [self.appTitleLabel.trailingAnchor constraintLessThanOrEqualToAnchor:selectBtn.leadingAnchor constant:-4],
+        [self.titleLabel.leadingAnchor constraintEqualToAnchor:self.iconView.trailingAnchor constant:6],
+        [self.titleLabel.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
+        [self.titleLabel.widthAnchor constraintLessThanOrEqualToConstant:85],
 
-        [selectBtn.leadingAnchor constraintEqualToAnchor:self.appTitleLabel.trailingAnchor constant:2],
-        [selectBtn.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
-        [selectBtn.widthAnchor constraintEqualToConstant:16],
-        [selectBtn.heightAnchor constraintEqualToConstant:16],
+        [chev.leadingAnchor constraintEqualToAnchor:self.titleLabel.trailingAnchor constant:3],
+        [chev.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
+        [chev.widthAnchor constraintEqualToConstant:10],
+        [chev.heightAnchor constraintEqualToConstant:10],
 
-        [dots.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-8],
-        [dots.centerYAnchor constraintEqualToAnchor:header.centerYAnchor],
+        [dots.trailingAnchor constraintEqualToAnchor:topBar.trailingAnchor constant:-8],
+        [dots.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
 
-        [self.webView.topAnchor constraintEqualToAnchor:header.bottomAnchor],
-        [self.webView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [self.webView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [self.webView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor]
+        [tabStrip.topAnchor constraintEqualToAnchor:topBar.bottomAnchor],
+        [tabStrip.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [tabStrip.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [tabStrip.heightAnchor constraintEqualToConstant:26],
+
+        [self.recentTabsStack.leadingAnchor constraintEqualToAnchor:tabStrip.leadingAnchor constant:6],
+        [self.recentTabsStack.trailingAnchor constraintEqualToAnchor:tabStrip.trailingAnchor constant:-6],
+        [self.recentTabsStack.centerYAnchor constraintEqualToAnchor:tabStrip.centerYAnchor],
+
+        [self.contentHostView.topAnchor constraintEqualToAnchor:tabStrip.bottomAnchor],
+        [self.contentHostView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [self.contentHostView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [self.contentHostView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
+
+        [self.webView.topAnchor constraintEqualToAnchor:self.contentHostView.topAnchor],
+        [self.webView.leadingAnchor constraintEqualToAnchor:self.contentHostView.leadingAnchor],
+        [self.webView.trailingAnchor constraintEqualToAnchor:self.contentHostView.trailingAnchor],
+        [self.webView.bottomAnchor constraintEqualToAnchor:self.contentHostView.bottomAnchor]
     ]];
 }
 
-- (UIButton *)makeDotButtonWithColor:(UIColor *)color action:(SEL)sel {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-    btn.backgroundColor = color;
-    btn.layer.cornerRadius = 6;
-    btn.translatesAutoresizingMaskIntoConstraints = NO;
-    [btn.widthAnchor constraintEqualToConstant:12].active = YES;
-    [btn.heightAnchor constraintEqualToConstant:12].active = YES;
-    [btn addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
-    return btn;
+- (UIButton *)dotBtn:(UIColor *)color sel:(SEL)sel {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    b.backgroundColor = color;
+    b.layer.cornerRadius = 5.5;
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    [b.widthAnchor constraintEqualToConstant:11].active = YES;
+    [b.heightAnchor constraintEqualToConstant:11].active = YES;
+    [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
+    return b;
 }
 
-- (void)loadAppWithBundleID:(NSString *)bundleID name:(NSString *)name icon:(UIImage *)icon url:(NSString *)urlStr {
-    self.currentBundleID = bundleID;
-    self.currentAppName = name;
-    self.appTitleLabel.text = name;
-    self.appIconView.image = icon ?: [UIImage systemImageNamed:@"app.fill"];
-    if (urlStr.length > 0) {
-        [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:urlStr]]];
+- (void)hostApplication:(InstalledAppItem *)app {
+    if (!app) return;
+    self.currentApp = app;
+    self.titleLabel.text = app.name;
+    self.iconView.image = app.icon;
+
+    // Cap nhat danh sach tab mo nhanh
+    NSPredicate *pred = [NSPredicate predicateWithFormat:@"bundleID != %@", app.bundleID];
+    [self.recentApps filterUsingPredicate:pred];
+    [self.recentApps insertObject:app atIndex:0];
+    if (self.recentApps.count > 4) [self.recentApps removeLastObject];
+    [self rebuildRecentTabs];
+
+    // Thu nhung Scene ung dung that qua FrontBoard neu he thong cho phep
+    BOOL embeddedNativeScene = [self tryEmbedNativeSceneForBundleID:app.bundleID];
+    if (!embeddedNativeScene) {
+        self.webView.hidden = NO;
+        [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:app.fallbackURL]]];
     }
 }
 
-- (void)onSelectTap { [self.delegate paneViewDidRequestSelectApp:self]; }
-- (void)onExpandTap { [self.delegate paneViewDidRequestExpand:self]; }
-- (void)onReloadTap { [self.webView reload]; [self.delegate paneViewDidRequestReload:self]; }
+- (BOOL)tryEmbedNativeSceneForBundleID:(NSString *)bundleID {
+    dlopen("/System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard", RTLD_LAZY);
+    Class fbSceneMgrClass = NSClassFromString(@"FBSceneManager");
+    if (!fbSceneMgrClass || ![fbSceneMgrClass respondsToSelector:@selector(sharedInstance)]) {
+        return NO;
+    }
+
+    id sceneMgr = [fbSceneMgrClass sharedInstance];
+    if (![sceneMgr respondsToSelector:@selector(scenes)]) return NO;
+
+    NSSet *scenes = [sceneMgr scenes];
+    for (id scene in scenes) {
+        NSString *ident = [scene valueForKey:@"identifier"];
+        if ([ident containsString:bundleID]) {
+            id presMgr = [scene uiPresentationManager];
+            if ([presMgr respondsToSelector:@selector(createPresenterWithIdentifier:)]) {
+                NSString *presID = [NSString stringWithFormat:@"XemYouTube-Slot%ld", (long)self.slotIndex];
+                id presenter = [presMgr createPresenterWithIdentifier:presID];
+                if ([presenter respondsToSelector:@selector(activate)]) {
+                    [presenter activate];
+                    UIView *hostView = [presenter presentationView];
+                    if (hostView) {
+                        for (UIView *sub in self.contentHostView.subviews) {
+                            if (sub != self.webView) [sub removeFromSuperview];
+                        }
+                        self.webView.hidden = YES;
+                        hostView.frame = self.contentHostView.bounds;
+                        hostView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+                        [self.contentHostView addSubview:hostView];
+                        self.activeScenePresenter = presenter;
+                        return YES;
+                    }
+                }
+            }
+        }
+    }
+    return NO;
+}
+
+- (void)rebuildRecentTabs {
+    for (UIView *v in self.recentTabsStack.arrangedSubviews) {
+        [self.recentTabsStack removeArrangedSubview:v];
+        [v removeFromSuperview];
+    }
+    for (NSInteger i = 0; i < self.recentApps.count; i++) {
+        InstalledAppItem *item = self.recentApps[i];
+        UIButton *tabBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        tabBtn.tag = i;
+        [tabBtn setTitle:[NSString stringWithFormat:@" %@", item.name] forState:UIControlStateNormal];
+        [tabBtn setImage:[self resizeIcon:item.icon size:CGSizeMake(13, 13)] forState:UIControlStateNormal];
+        tabBtn.tintColor = [UIColor labelColor];
+        tabBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:(i == 0 ? UIFontWeightBold : UIFontWeightRegular)];
+        tabBtn.backgroundColor = (i == 0) ? [UIColor secondarySystemBackgroundColor] : [UIColor clearColor];
+        tabBtn.layer.cornerRadius = 6;
+        tabBtn.contentEdgeInsets = UIEdgeInsetsMake(2, 6, 2, 6);
+        [tabBtn addTarget:self action:@selector(recentTabTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [self.recentTabsStack addArrangedSubview:tabBtn];
+    }
+}
+
+- (UIImage *)resizeIcon:(UIImage *)img size:(CGSize)sz {
+    UIGraphicsBeginImageContextWithOptions(sz, NO, 0.0);
+    [img drawInRect:CGRectMake(0, 0, sz.width, sz.height)];
+    UIImage *res = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return [res imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+}
+
+- (void)recentTabTapped:(UIButton *)sender {
+    if (sender.tag >= 0 && sender.tag < self.recentApps.count) {
+        [self hostApplication:self.recentApps[sender.tag]];
+    }
+}
+
+- (void)onTitle { [self.delegate windowPaneDidTapTitle:self]; }
+- (void)onLayout { [self.delegate windowPaneDidTapLayout:self]; }
+- (void)onClose { [self.delegate windowPaneDidTapClose:self]; }
 
 @end
 
-#pragma mark - Hop Thoai Luoi Chon App Tren Dien Thoai (Giong het anh "Chon app o 1")
+#pragma mark - Hop Thoai "Chia man hinh" (6 Bo cuc + Mo nhanh + Thoat)
 
-@interface AppPickerOverlayView : UIView <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
+typedef NS_ENUM(NSInteger, SplitLayoutMode) {
+    SplitLayoutSingle = 0,     // 1 o toan man hinh
+    SplitLayoutDual = 1,       // 2 o doc
+    SplitLayoutTriple = 2,     // 3 o doc
+    SplitLayoutQuad = 3,       // 4 o doc
+    SplitLayoutGrid3 = 4,      // 1 trai + 2 phai
+    SplitLayoutPiP = 5         // 1 lon + 1 noi goc duoi
+};
+
+@interface SplitLayoutSheetView : UIView
+@property (nonatomic, assign) SplitLayoutMode selectedMode;
+@property (nonatomic, copy) void (^onSelectMode)(SplitLayoutMode mode);
+@property (nonatomic, copy) void (^onQuickLaunch)(NSString *bundleID);
+@property (nonatomic, copy) void (^onDismiss)(void);
+- (instancetype)initWithCurrentMode:(SplitLayoutMode)mode;
+@end
+
+@implementation SplitLayoutSheetView
+
+- (instancetype)initWithCurrentMode:(SplitLayoutMode)mode {
+    self = [super initWithFrame:CGRectZero];
+    if (self) {
+        self.selectedMode = mode;
+        self.backgroundColor = [UIColor systemBackgroundColor];
+        self.layer.cornerRadius = 22;
+        self.layer.borderWidth = 2.0;
+        self.layer.borderColor = [UIColor systemGray3Color].CGColor;
+        self.clipsToBounds = YES;
+        [self setupUI];
+    }
+    return self;
+}
+
+- (void)setupUI {
+    UILabel *title = [[UILabel alloc] init];
+    title.text = @"Chia màn hình";
+    title.font = [UIFont boldSystemFontOfSize:17];
+    title.textAlignment = NSTextAlignmentCenter;
+    title.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [closeBtn setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+    closeBtn.tintColor = [UIColor systemGray2Color];
+    closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [closeBtn addTarget:self action:@selector(dismissTap) forControlEvents:UIControlEventTouchUpInside];
+
+    // Hang 1: 4 kieu chia (1 o, 2 o, 3 o, 4 o)
+    NSArray *row1Icons = @[@"rectangle.fill", @"rectangle.split.2x1.fill", @"rectangle.split.3x1.fill", @"rectangle.grid.2x2.fill"];
+    UIStackView *row1 = [[UIStackView alloc] init];
+    row1.spacing = 10;
+    row1.distribution = UIStackViewDistributionFillEqually;
+    row1.translatesAutoresizingMaskIntoConstraints = NO;
+    for (NSInteger i = 0; i < 4; i++) {
+        [row1 addArrangedSubview:[self layoutCardButtonWithMode:(SplitLayoutMode)i icon:row1Icons[i]]];
+    }
+
+    // Hang 2: Luoi 1+2, PiP, nut +
+    UIStackView *row2 = [[UIStackView alloc] init];
+    row2.spacing = 10;
+    row2.distribution = UIStackViewDistributionFillEqually;
+    row2.translatesAutoresizingMaskIntoConstraints = NO;
+    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutGrid3 icon:@"rectangle.leftthird.inset.filled"]];
+    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutPiP icon:@"pip.fill"]];
+    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutDual icon:@"plus"]];
+
+    UILabel *quickLbl = [[UILabel alloc] init];
+    quickLbl.text = @"MỞ NHANH";
+    quickLbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
+    quickLbl.textColor = [UIColor secondaryLabelColor];
+    quickLbl.textAlignment = NSTextAlignmentCenter;
+    quickLbl.translatesAutoresizingMaskIntoConstraints = NO;
+
+    // Khung vien net dut MO NHANH
+    UIView *quickBox = [[UIView alloc] init];
+    quickBox.layer.cornerRadius = 18;
+    quickBox.layer.borderWidth = 1.5;
+    quickBox.layer.borderColor = [UIColor systemBlueColor].CGColor;
+    quickBox.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UIButton *qDual = [self quickAppBtnWithIcon:[UIImage systemImageNamed:@"rectangle.split.2x1.fill"] tag:0];
+    UIImage *ytIcon = [UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)] ?
+        [UIImage _applicationIconImageForBundleIdentifier:@"com.google.ios.youtube" format:2 scale:2.0] : [UIImage systemImageNamed:@"play.rectangle.fill"];
+    UIImage *vmIcon = [UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)] ?
+        [UIImage _applicationIconImageForBundleIdentifier:@"vn.vietmap.live" format:2 scale:2.0] : [UIImage systemImageNamed:@"map.fill"];
+
+    UIButton *qYT = [self quickAppBtnWithIcon:[ytIcon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] tag:1];
+    UIButton *qVM = [self quickAppBtnWithIcon:[vmIcon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] tag:2];
+
+    UIStackView *qStack = [[UIStackView alloc] initWithArrangedSubviews:@[qDual, qYT, qVM]];
+    qStack.spacing = 12;
+    qStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [quickBox addSubview:qStack];
+
+    UIButton *exitBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [exitBtn setTitle:@"Thoát XemYouTube" forState:UIControlStateNormal];
+    [exitBtn setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
+    exitBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    exitBtn.backgroundColor = [UIColor systemGray6Color];
+    exitBtn.layer.cornerRadius = 12;
+    exitBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [exitBtn addTarget:self action:@selector(exitAppTap) forControlEvents:UIControlEventTouchUpInside];
+
+    [self addSubview:title];
+    [self addSubview:closeBtn];
+    [self addSubview:row1];
+    [self addSubview:row2];
+    [self addSubview:quickLbl];
+    [self addSubview:quickBox];
+    [self addSubview:exitBtn];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [title.topAnchor constraintEqualToAnchor:self.topAnchor constant:16],
+        [title.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+
+        [closeBtn.centerYAnchor constraintEqualToAnchor:title.centerYAnchor],
+        [closeBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
+        [closeBtn.widthAnchor constraintEqualToConstant:28],
+        [closeBtn.heightAnchor constraintEqualToConstant:28],
+
+        [row1.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:16],
+        [row1.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:16],
+        [row1.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-16],
+        [row1.heightAnchor constraintEqualToConstant:48],
+
+        [row2.topAnchor constraintEqualToAnchor:row1.bottomAnchor constant:10],
+        [row2.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:42],
+        [row2.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-42],
+        [row2.heightAnchor constraintEqualToConstant:48],
+
+        [quickLbl.topAnchor constraintEqualToAnchor:row2.bottomAnchor constant:18],
+        [quickLbl.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+
+        [quickBox.topAnchor constraintEqualToAnchor:quickLbl.bottomAnchor constant:8],
+        [quickBox.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [quickBox.heightAnchor constraintEqualToConstant:46],
+        [quickBox.widthAnchor constraintEqualToConstant:168],
+
+        [qStack.centerXAnchor constraintEqualToAnchor:quickBox.centerXAnchor],
+        [qStack.centerYAnchor constraintEqualToAnchor:quickBox.centerYAnchor],
+
+        [exitBtn.topAnchor constraintEqualToAnchor:quickBox.bottomAnchor constant:18],
+        [exitBtn.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [exitBtn.widthAnchor constraintEqualToConstant:170],
+        [exitBtn.heightAnchor constraintEqualToConstant:36]
+    ]];
+}
+
+- (UIButton *)layoutCardButtonWithMode:(SplitLayoutMode)mode icon:(NSString *)iconName {
+    BOOL isSelected = (self.selectedMode == mode);
+    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    btn.tag = mode;
+    [btn setImage:[UIImage systemImageNamed:iconName] forState:UIControlStateNormal];
+    btn.tintColor = isSelected ? [UIColor systemBlueColor] : [UIColor systemGrayColor];
+    btn.backgroundColor = isSelected ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.15] : [UIColor systemGray6Color];
+    btn.layer.cornerRadius = 12;
+    if (isSelected) {
+        btn.layer.borderWidth = 2.0;
+        btn.layer.borderColor = [UIColor systemBlueColor].CGColor;
+    }
+    [btn addTarget:self action:@selector(modeTapped:) forControlEvents:UIControlEventTouchUpInside];
+    return btn;
+}
+
+- (UIButton *)quickAppBtnWithIcon:(UIImage *)img tag:(NSInteger)tag {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    b.tag = tag;
+    [b setImage:img forState:UIControlStateNormal];
+    b.layer.cornerRadius = 8;
+    b.clipsToBounds = YES;
+    [b.widthAnchor constraintEqualToConstant:30].active = YES;
+    [b.heightAnchor constraintEqualToConstant:30].active = YES;
+    [b addTarget:self action:@selector(quickTapped:) forControlEvents:UIControlEventTouchUpInside];
+    return b;
+}
+
+- (void)modeTapped:(UIButton *)sender {
+    if (self.onSelectMode) self.onSelectMode((SplitLayoutMode)sender.tag);
+}
+
+- (void)quickTapped:(UIButton *)sender {
+    if (sender.tag == 0 && self.onSelectMode) {
+        self.onSelectMode(SplitLayoutDual);
+    } else if (sender.tag == 1 && self.onQuickLaunch) {
+        self.onQuickLaunch(@"com.google.ios.youtube");
+    } else if (sender.tag == 2 && self.onQuickLaunch) {
+        self.onQuickLaunch(@"vn.vietmap.live");
+    }
+}
+
+- (void)dismissTap { if (self.onDismiss) self.onDismiss(); }
+- (void)exitAppTap { exit(0); }
+
+@end
+
+#pragma mark - Luoi Chon App Tren Dien Thoai ("Chon app o 1")
+
+@interface AppPickerGridView : UIView <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
 @property (nonatomic, copy) NSString *titleText;
 @property (nonatomic, strong) NSArray<InstalledAppItem *> *apps;
-@property (nonatomic, copy) void (^onSelectApp)(InstalledAppItem *app);
+@property (nonatomic, copy) void (^onPick)(InstalledAppItem *app);
 @property (nonatomic, copy) void (^onClose)(void);
-@property (nonatomic, strong) UICollectionView *collectionView;
 - (instancetype)initWithTitle:(NSString *)title apps:(NSArray<InstalledAppItem *> *)apps;
 @end
 
-@implementation AppPickerOverlayView
+@implementation AppPickerGridView
 
 - (instancetype)initWithTitle:(NSString *)title apps:(NSArray<InstalledAppItem *> *)apps {
     self = [super initWithFrame:CGRectZero];
@@ -273,271 +602,326 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
         self.layer.borderWidth = 2.0;
         self.layer.borderColor = [UIColor systemGray3Color].CGColor;
         self.clipsToBounds = YES;
-        [self setupUI];
+        [self setup];
     }
     return self;
 }
 
-- (void)setupUI {
-    UILabel *headerLabel = [[UILabel alloc] init];
-    headerLabel.text = self.titleText;
-    headerLabel.font = [UIFont boldSystemFontOfSize:16];
-    headerLabel.translatesAutoresizingMaskIntoConstraints = NO;
+- (void)setup {
+    UILabel *lbl = [[UILabel alloc] init];
+    lbl.text = self.titleText;
+    lbl.font = [UIFont boldSystemFontOfSize:16];
+    lbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [closeBtn setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
-    closeBtn.tintColor = [UIColor secondaryLabelColor];
-    closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [closeBtn addTarget:self action:@selector(closeTapped) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    [close setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
+    close.tintColor = [UIColor secondaryLabelColor];
+    close.translatesAutoresizingMaskIntoConstraints = NO;
+    [close addTarget:self action:@selector(closeTap) forControlEvents:UIControlEventTouchUpInside];
 
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
-    layout.minimumLineSpacing = 14;
-    layout.minimumInteritemSpacing = 6;
-    layout.sectionInset = UIEdgeInsetsMake(8, 12, 16, 12);
+    layout.minimumLineSpacing = 12;
+    layout.minimumInteritemSpacing = 4;
+    layout.sectionInset = UIEdgeInsetsMake(8, 10, 14, 10);
 
-    self.collectionView = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
-    self.collectionView.backgroundColor = [UIColor clearColor];
-    self.collectionView.dataSource = self;
-    self.collectionView.delegate = self;
-    [self.collectionView registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"AppIconCell"];
-    self.collectionView.translatesAutoresizingMaskIntoConstraints = NO;
+    UICollectionView *cv = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    cv.backgroundColor = [UIColor clearColor];
+    cv.dataSource = self;
+    cv.delegate = self;
+    [cv registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"Cell"];
+    cv.translatesAutoresizingMaskIntoConstraints = NO;
 
-    [self addSubview:headerLabel];
-    [self addSubview:closeBtn];
-    [self addSubview:self.collectionView];
+    [self addSubview:lbl];
+    [self addSubview:close];
+    [self addSubview:cv];
 
     [NSLayoutConstraint activateConstraints:@[
-        [headerLabel.topAnchor constraintEqualToAnchor:self.topAnchor constant:14],
-        [headerLabel.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:16],
-
-        [closeBtn.centerYAnchor constraintEqualToAnchor:headerLabel.centerYAnchor],
-        [closeBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
-        [closeBtn.widthAnchor constraintEqualToConstant:28],
-        [closeBtn.heightAnchor constraintEqualToConstant:28],
-
-        [self.collectionView.topAnchor constraintEqualToAnchor:headerLabel.bottomAnchor constant:8],
-        [self.collectionView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [self.collectionView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [self.collectionView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor]
+        [lbl.topAnchor constraintEqualToAnchor:self.topAnchor constant:14],
+        [lbl.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:16],
+        [close.centerYAnchor constraintEqualToAnchor:lbl.centerYAnchor],
+        [close.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
+        [cv.topAnchor constraintEqualToAnchor:lbl.bottomAnchor constant:6],
+        [cv.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [cv.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [cv.bottomAnchor constraintEqualToAnchor:self.bottomAnchor]
     ]];
 }
 
-- (void)closeTapped {
-    if (self.onClose) self.onClose();
-}
+- (void)closeTap { if (self.onClose) self.onClose(); }
+- (NSInteger)collectionView:(UICollectionView *)cv numberOfItemsInSection:(NSInteger)s { return self.apps.count; }
 
-- (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
-    return self.apps.count;
-}
-
-- (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
-    UICollectionViewCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"AppIconCell" forIndexPath:indexPath];
+- (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)cv cellForItemAtIndexPath:(NSIndexPath *)ip {
+    UICollectionViewCell *cell = [cv dequeueReusableCellWithReuseIdentifier:@"Cell" forIndexPath:ip];
     for (UIView *v in cell.contentView.subviews) [v removeFromSuperview];
-
-    InstalledAppItem *app = self.apps[indexPath.item];
+    InstalledAppItem *app = self.apps[ip.item];
 
     UIImageView *iv = [[UIImageView alloc] initWithImage:app.icon];
     iv.layer.cornerRadius = 12;
     iv.clipsToBounds = YES;
-    iv.contentMode = UIViewContentModeScaleAspectFit;
     iv.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UILabel *lbl = [[UILabel alloc] init];
-    lbl.text = app.name;
-    lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-    lbl.textAlignment = NSTextAlignmentCenter;
-    lbl.lineBreakMode = NSLineBreakByTruncatingTail;
-    lbl.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *t = [[UILabel alloc] init];
+    t.text = app.name;
+    t.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    t.textAlignment = NSTextAlignmentCenter;
+    t.translatesAutoresizingMaskIntoConstraints = NO;
 
     [cell.contentView addSubview:iv];
-    [cell.contentView addSubview:lbl];
-
+    [cell.contentView addSubview:t];
     [NSLayoutConstraint activateConstraints:@[
         [iv.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:2],
         [iv.centerXAnchor constraintEqualToAnchor:cell.contentView.centerXAnchor],
-        [iv.widthAnchor constraintEqualToConstant:48],
-        [iv.heightAnchor constraintEqualToConstant:48],
-
-        [lbl.topAnchor constraintEqualToAnchor:iv.bottomAnchor constant:5],
-        [lbl.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:2],
-        [lbl.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-2]
+        [iv.widthAnchor constraintEqualToConstant:46],
+        [iv.heightAnchor constraintEqualToConstant:46],
+        [t.topAnchor constraintEqualToAnchor:iv.bottomAnchor constant:4],
+        [t.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:2],
+        [t.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-2]
     ]];
-
     return cell;
 }
 
-- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
-    CGFloat w = floor((collectionView.bounds.size.width - 48) / 5.0);
-    return CGSizeMake(MAX(w, 52), 70);
+- (CGSize)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l sizeForItemAtIndexPath:(NSIndexPath *)ip {
+    CGFloat w = floor((cv.bounds.size.width - 40) / 5.0);
+    return CGSizeMake(MAX(w, 50), 68);
 }
 
-- (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
-    if (self.onSelectApp) {
-        self.onSelectApp(self.apps[indexPath.item]);
-    }
+- (void)collectionView:(UICollectionView *)cv didSelectItemAtIndexPath:(NSIndexPath *)ip {
+    if (self.onPick) self.onPick(self.apps[ip.item]);
 }
-
 @end
 
-#pragma mark - Man Hinh Mo Phong & Tren Xe (Chia 2 o + Thanh keo + Widget Toc Do 50)
+#pragma mark - Man Hinh Chinh "Mo phong" & "Tren xe"
 
-@interface WorkspaceContainerViewController : UIViewController <AppPaneViewDelegate, CLLocationManagerDelegate>
-@property (nonatomic, assign) BOOL isCarMode;
-@property (nonatomic, strong) UIView *stageBox;
-@property (nonatomic, strong) AppPaneView *pane1;
-@property (nonatomic, strong) AppPaneView *pane2;
+@interface MultiWindowWorkspaceViewController : UIViewController <AppWindowPaneDelegate, CLLocationManagerDelegate>
+@property (nonatomic, assign) BOOL isCarScreen;
+@property (nonatomic, assign) SplitLayoutMode layoutMode;
+@property (nonatomic, strong) UIView *stageContainer;
+@property (nonatomic, strong) NSMutableArray<AppWindowPane *> *panes;
 @property (nonatomic, strong) UIView *dividerView;
-@property (nonatomic, strong) NSLayoutConstraint *pane1WidthConstraint;
+@property (nonatomic, strong) NSLayoutConstraint *pane0WidthConstraint;
 @property (nonatomic, assign) CGFloat splitRatio;
-@property (nonatomic, strong) AppPickerOverlayView *pickerOverlay;
-@property (nonatomic, strong) NSArray<InstalledAppItem *> *installedApps;
+@property (nonatomic, strong) UIView *activeModalOverlay;
+@property (nonatomic, strong) NSArray<InstalledAppItem *> *allApps;
 
-// Widget toc do + bien bao 50 + gio + pin
+// Widget HUD goc duoi o 1 (Gio + Pin + Toc do + Bien bao 50)
 @property (nonatomic, strong) UIView *hudCard;
 @property (nonatomic, strong) UILabel *timeLabel;
 @property (nonatomic, strong) UILabel *batteryLabel;
 @property (nonatomic, strong) UILabel *speedLabel;
 @property (nonatomic, strong) CLLocationManager *locationManager;
-@property (nonatomic, strong) NSTimer *clockTimer;
 @end
 
-@implementation WorkspaceContainerViewController
+@implementation MultiWindowWorkspaceViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.installedApps = FetchInstalledUserApps();
-    self.splitRatio = ([[NSUserDefaults standardUserDefaults] floatForKey:@"splitRatio"] > 0.2) ? [[NSUserDefaults standardUserDefaults] floatForKey:@"splitRatio"] : 0.5;
+    self.allApps = GetInstalledApps();
+    self.layoutMode = SplitLayoutDual;
+    self.splitRatio = 0.5;
+    self.panes = [NSMutableArray array];
 
-    UILabel *titleLbl = [[UILabel alloc] init];
-    titleLbl.text = self.isCarMode ? @"Trên xe" : @"Mô phỏng";
-    titleLbl.font = [UIFont systemFontOfSize:32 weight:UIFontWeightBold];
-    titleLbl.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:titleLbl];
+    UILabel *headerTitle = [[UILabel alloc] init];
+    headerTitle.text = self.isCarScreen ? @"Trên xe" : @"Mô phỏng";
+    headerTitle.font = [UIFont systemFontOfSize:32 weight:UIFontWeightBold];
+    headerTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:headerTitle];
 
-    UIButton *pick1Btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [pick1Btn setTitle:@"Ô 1" forState:UIControlStateNormal];
-    pick1Btn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
-    pick1Btn.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    pick1Btn.layer.cornerRadius = 10;
-    pick1Btn.translatesAutoresizingMaskIntoConstraints = NO;
-    [pick1Btn addTarget:self action:@selector(openPickerForPane1) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *layoutBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [layoutBtn setImage:[UIImage systemImageNamed:@"rectangle.split.2x1.fill"] forState:UIControlStateNormal];
+    layoutBtn.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
+    layoutBtn.layer.cornerRadius = 10;
+    layoutBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [layoutBtn addTarget:self action:@selector(openLayoutSheet) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:layoutBtn];
 
-    UIButton *pick2Btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [pick2Btn setTitle:@"Ô 2" forState:UIControlStateNormal];
-    pick2Btn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
-    pick2Btn.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    pick2Btn.layer.cornerRadius = 10;
-    pick2Btn.translatesAutoresizingMaskIntoConstraints = NO;
-    [pick2Btn addTarget:self action:@selector(openPickerForPane2) forControlEvents:UIControlEventTouchUpInside];
-
-    [self.view addSubview:pick1Btn];
-    [self.view addSubview:pick2Btn];
-
-    self.stageBox = [[UIView alloc] init];
-    self.stageBox.backgroundColor = [UIColor systemBackgroundColor];
-    self.stageBox.layer.cornerRadius = 20;
-    self.stageBox.layer.borderWidth = 2.0;
-    self.stageBox.layer.borderColor = [UIColor systemGray3Color].CGColor;
-    self.stageBox.clipsToBounds = YES;
-    self.stageBox.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.stageBox];
+    self.stageContainer = [[UIView alloc] init];
+    self.stageContainer.backgroundColor = [UIColor systemBackgroundColor];
+    self.stageContainer.layer.cornerRadius = 20;
+    self.stageContainer.layer.borderWidth = 2.0;
+    self.stageContainer.layer.borderColor = [UIColor systemGray3Color].CGColor;
+    self.stageContainer.clipsToBounds = YES;
+    self.stageContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.stageContainer];
 
     [NSLayoutConstraint activateConstraints:@[
-        [titleLbl.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:8],
-        [titleLbl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+        [headerTitle.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:8],
+        [headerTitle.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
 
-        [pick2Btn.centerYAnchor constraintEqualToAnchor:titleLbl.centerYAnchor],
-        [pick2Btn.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-        [pick2Btn.widthAnchor constraintEqualToConstant:48],
-        [pick2Btn.heightAnchor constraintEqualToConstant:30],
+        [layoutBtn.centerYAnchor constraintEqualToAnchor:headerTitle.centerYAnchor],
+        [layoutBtn.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [layoutBtn.widthAnchor constraintEqualToConstant:40],
+        [layoutBtn.heightAnchor constraintEqualToConstant:32],
 
-        [pick1Btn.centerYAnchor constraintEqualToAnchor:titleLbl.centerYAnchor],
-        [pick1Btn.trailingAnchor constraintEqualToAnchor:pick2Btn.leadingAnchor constant:-8],
-        [pick1Btn.widthAnchor constraintEqualToConstant:48],
-        [pick1Btn.heightAnchor constraintEqualToConstant:30],
-
-        [self.stageBox.topAnchor constraintEqualToAnchor:titleLbl.bottomAnchor constant:12],
-        [self.stageBox.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:14],
-        [self.stageBox.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-14],
-        [self.stageBox.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.54]
+        [self.stageContainer.topAnchor constraintEqualToAnchor:headerTitle.bottomAnchor constant:12],
+        [self.stageContainer.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:14],
+        [self.stageContainer.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-14],
+        [self.stageContainer.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.55]
     ]];
 
-    [self setupSplitPanes];
-    [self setupSpeedHUD];
-    [self loadSavedOrDefaultApps];
-}
-
-- (void)setupSplitPanes {
-    self.pane1 = [[AppPaneView alloc] initWithPaneIndex:1];
-    self.pane1.delegate = self;
-    self.pane1.translatesAutoresizingMaskIntoConstraints = NO;
-
-    self.pane2 = [[AppPaneView alloc] initWithPaneIndex:2];
-    self.pane2.delegate = self;
-    self.pane2.translatesAutoresizingMaskIntoConstraints = NO;
+    for (NSInteger i = 1; i <= 4; i++) {
+        AppWindowPane *p = [[AppWindowPane alloc] initWithSlotIndex:i];
+        p.delegate = self;
+        p.translatesAutoresizingMaskIntoConstraints = NO;
+        [self.panes addObject:p];
+    }
 
     self.dividerView = [[UIView alloc] init];
     self.dividerView.backgroundColor = [UIColor systemGray5Color];
     self.dividerView.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UIImageView *gripIcon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"line.3.horizontal"]];
-    gripIcon.tintColor = [UIColor systemGrayColor];
-    gripIcon.transform = CGAffineTransformMakeRotation(M_PI_2);
-    gripIcon.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.dividerView addSubview:gripIcon];
+    UIImageView *grip = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"line.3.horizontal"]];
+    grip.tintColor = [UIColor systemGrayColor];
+    grip.transform = CGAffineTransformMakeRotation(M_PI_2);
+    grip.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.dividerView addSubview:grip];
     [NSLayoutConstraint activateConstraints:@[
-        [gripIcon.centerXAnchor constraintEqualToAnchor:self.dividerView.centerXAnchor],
-        [gripIcon.centerYAnchor constraintEqualToAnchor:self.dividerView.centerYAnchor],
-        [gripIcon.widthAnchor constraintEqualToConstant:14],
-        [gripIcon.heightAnchor constraintEqualToConstant:14]
+        [grip.centerXAnchor constraintEqualToAnchor:self.dividerView.centerXAnchor],
+        [grip.centerYAnchor constraintEqualToAnchor:self.dividerView.centerYAnchor],
+        [grip.widthAnchor constraintEqualToConstant:14],
+        [grip.heightAnchor constraintEqualToConstant:14]
     ]];
+    [self.dividerView addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPanDivider:)]];
 
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleDividerPan:)];
-    [self.dividerView addGestureRecognizer:pan];
-
-    [self.stageBox addSubview:self.pane1];
-    [self.stageBox addSubview:self.dividerView];
-    [self.stageBox addSubview:self.pane2];
-
-    self.pane1WidthConstraint = [self.pane1.widthAnchor constraintEqualToAnchor:self.stageBox.widthAnchor multiplier:self.splitRatio constant:-6];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [self.pane1.topAnchor constraintEqualToAnchor:self.stageBox.topAnchor],
-        [self.pane1.bottomAnchor constraintEqualToAnchor:self.stageBox.bottomAnchor],
-        [self.pane1.leadingAnchor constraintEqualToAnchor:self.stageBox.leadingAnchor],
-        self.pane1WidthConstraint,
-
-        [self.dividerView.topAnchor constraintEqualToAnchor:self.stageBox.topAnchor],
-        [self.dividerView.bottomAnchor constraintEqualToAnchor:self.stageBox.bottomAnchor],
-        [self.dividerView.leadingAnchor constraintEqualToAnchor:self.pane1.trailingAnchor],
-        [self.dividerView.widthAnchor constraintEqualToConstant:12],
-
-        [self.pane2.topAnchor constraintEqualToAnchor:self.stageBox.topAnchor],
-        [self.pane2.bottomAnchor constraintEqualToAnchor:self.stageBox.bottomAnchor],
-        [self.pane2.leadingAnchor constraintEqualToAnchor:self.dividerView.trailingAnchor],
-        [self.pane2.trailingAnchor constraintEqualToAnchor:self.stageBox.trailingAnchor]
-    ]];
+    [self applySplitLayout:SplitLayoutDual];
+    [self setupHUD];
+    [self assignInitialApps];
 }
 
-- (void)setupSpeedHUD {
+- (void)assignInitialApps {
+    InstalledAppItem *yt = [self appByBundle:@"com.google.ios.youtube"] ?: self.allApps.firstObject;
+    InstalledAppItem *vm = [self appByBundle:@"vn.vietmap.live"] ?: (self.allApps.count > 1 ? self.allApps[1] : yt);
+    InstalledAppItem *gm = [self appByBundle:@"com.google.Maps"] ?: yt;
+    InstalledAppItem *zm = [self appByBundle:@"com.zing.mp3"] ?: vm;
+
+    [self.panes[0] hostApplication:yt];
+    [self.panes[1] hostApplication:vm];
+    [self.panes[2] hostApplication:gm];
+    [self.panes[3] hostApplication:zm];
+}
+
+- (InstalledAppItem *)appByBundle:(NSString *)bid {
+    for (InstalledAppItem *item in self.allApps) {
+        if ([item.bundleID isEqualToString:bid]) return item;
+    }
+    return nil;
+}
+
+- (void)applySplitLayout:(SplitLayoutMode)mode {
+    self.layoutMode = mode;
+    for (UIView *sub in self.stageContainer.subviews) {
+        if (sub != self.hudCard) [sub removeFromSuperview];
+    }
+
+    AppWindowPane *p0 = self.panes[0];
+    AppWindowPane *p1 = self.panes[1];
+    AppWindowPane *p2 = self.panes[2];
+    AppWindowPane *p3 = self.panes[3];
+
+    if (mode == SplitLayoutSingle) {
+        [self.stageContainer addSubview:p0];
+        [NSLayoutConstraint activateConstraints:@[
+            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+            [p0.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
+        ]];
+    } else if (mode == SplitLayoutDual) {
+        [self.stageContainer addSubview:p0];
+        [self.stageContainer addSubview:self.dividerView];
+        [self.stageContainer addSubview:p1];
+        self.pane0WidthConstraint = [p0.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:self.splitRatio constant:-6];
+        [NSLayoutConstraint activateConstraints:@[
+            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+            self.pane0WidthConstraint,
+
+            [self.dividerView.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [self.dividerView.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [self.dividerView.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor],
+            [self.dividerView.widthAnchor constraintEqualToConstant:12],
+
+            [p1.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p1.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [p1.leadingAnchor constraintEqualToAnchor:self.dividerView.trailingAnchor],
+            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
+        ]];
+    } else if (mode == SplitLayoutTriple || mode == SplitLayoutQuad) {
+        NSInteger count = (mode == SplitLayoutTriple) ? 3 : 4;
+        UIStackView *stack = [[UIStackView alloc] init];
+        stack.axis = UILayoutConstraintAxisHorizontal;
+        stack.distribution = UIStackViewDistributionFillEqually;
+        stack.spacing = 2;
+        stack.backgroundColor = [UIColor systemGray4Color];
+        stack.translatesAutoresizingMaskIntoConstraints = NO;
+        for (NSInteger i = 0; i < count; i++) [stack addArrangedSubview:self.panes[i]];
+        [self.stageContainer addSubview:stack];
+        [NSLayoutConstraint activateConstraints:@[
+            [stack.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [stack.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [stack.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+            [stack.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
+        ]];
+    } else if (mode == SplitLayoutGrid3) {
+        [self.stageContainer addSubview:p0];
+        [self.stageContainer addSubview:p1];
+        [self.stageContainer addSubview:p2];
+        [NSLayoutConstraint activateConstraints:@[
+            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+            [p0.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:0.5],
+
+            [p1.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p1.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor constant:2],
+            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
+            [p1.heightAnchor constraintEqualToAnchor:self.stageContainer.heightAnchor multiplier:0.5],
+
+            [p2.topAnchor constraintEqualToAnchor:p1.bottomAnchor constant:2],
+            [p2.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor constant:2],
+            [p2.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
+            [p2.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor]
+        ]];
+    } else if (mode == SplitLayoutPiP) {
+        [self.stageContainer addSubview:p0];
+        p1.layer.cornerRadius = 14;
+        p1.layer.borderWidth = 1.5;
+        p1.layer.borderColor = [UIColor systemGray3Color].CGColor;
+        [self.stageContainer addSubview:p1];
+        [NSLayoutConstraint activateConstraints:@[
+            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
+            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+            [p0.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
+
+            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor constant:-12],
+            [p1.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor constant:-16],
+            [p1.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:0.46],
+            [p1.heightAnchor constraintEqualToAnchor:self.stageContainer.heightAnchor multiplier:0.45]
+        ]];
+    }
+
+    if (self.hudCard) {
+        [self.stageContainer bringSubviewToFront:self.hudCard];
+    }
+}
+
+- (void)setupHUD {
     self.hudCard = [[UIView alloc] init];
     self.hudCard.backgroundColor = [[UIColor systemBackgroundColor] colorWithAlphaComponent:0.95];
     self.hudCard.layer.cornerRadius = 16;
     self.hudCard.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.hudCard.layer.shadowOpacity = 0.18;
-    self.hudCard.layer.shadowRadius = 8;
-    self.hudCard.layer.shadowOffset = CGSizeMake(0, 3);
+    self.hudCard.layer.shadowOpacity = 0.16;
+    self.hudCard.layer.shadowRadius = 6;
+    self.hudCard.layer.shadowOffset = CGSizeMake(0, 2);
     self.hudCard.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.timeLabel = [[UILabel alloc] init];
     self.timeLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-    self.timeLabel.textColor = [UIColor labelColor];
     self.timeLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.batteryLabel = [[UILabel alloc] init];
     self.batteryLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-    self.batteryLabel.textColor = [UIColor labelColor];
     self.batteryLabel.textAlignment = NSTextAlignmentRight;
     self.batteryLabel.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -551,63 +935,60 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
     unitLbl.text = @"km/h";
     unitLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
     unitLbl.textColor = [UIColor secondaryLabelColor];
-    unitLbl.textAlignment = NSTextAlignmentCenter;
     unitLbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Bien bao gioi han toc do 50 tron vien do
-    UIView *signCircle = [[UIView alloc] init];
-    signCircle.backgroundColor = [UIColor whiteColor];
-    signCircle.layer.cornerRadius = 21;
-    signCircle.layer.borderWidth = 4.0;
-    signCircle.layer.borderColor = [UIColor systemRedColor].CGColor;
-    signCircle.translatesAutoresizingMaskIntoConstraints = NO;
+    UIView *sign = [[UIView alloc] init];
+    sign.backgroundColor = [UIColor whiteColor];
+    sign.layer.cornerRadius = 21;
+    sign.layer.borderWidth = 4.0;
+    sign.layer.borderColor = [UIColor systemRedColor].CGColor;
+    sign.translatesAutoresizingMaskIntoConstraints = NO;
 
     UILabel *signNum = [[UILabel alloc] init];
     signNum.text = @"50";
     signNum.textColor = [UIColor blackColor];
     signNum.font = [UIFont systemFontOfSize:16 weight:UIFontWeightHeavy];
-    signNum.textAlignment = NSTextAlignmentCenter;
     signNum.translatesAutoresizingMaskIntoConstraints = NO;
-    [signCircle addSubview:signNum];
+    [sign addSubview:signNum];
 
     [self.hudCard addSubview:self.timeLabel];
     [self.hudCard addSubview:self.batteryLabel];
     [self.hudCard addSubview:self.speedLabel];
     [self.hudCard addSubview:unitLbl];
-    [self.hudCard addSubview:signCircle];
-    [self.stageBox addSubview:self.hudCard];
+    [self.hudCard addSubview:sign];
+    [self.stageContainer addSubview:self.hudCard];
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.hudCard.leadingAnchor constraintEqualToAnchor:self.stageBox.leadingAnchor constant:10],
-        [self.hudCard.bottomAnchor constraintEqualToAnchor:self.stageBox.bottomAnchor constant:-18],
+        [self.hudCard.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor constant:10],
+        [self.hudCard.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor constant:-18],
         [self.hudCard.widthAnchor constraintEqualToConstant:118],
         [self.hudCard.heightAnchor constraintEqualToConstant:78],
 
         [self.timeLabel.topAnchor constraintEqualToAnchor:self.hudCard.topAnchor constant:6],
         [self.timeLabel.leadingAnchor constraintEqualToAnchor:self.hudCard.leadingAnchor constant:10],
-
         [self.batteryLabel.topAnchor constraintEqualToAnchor:self.hudCard.topAnchor constant:6],
         [self.batteryLabel.trailingAnchor constraintEqualToAnchor:self.hudCard.trailingAnchor constant:-10],
 
         [self.speedLabel.topAnchor constraintEqualToAnchor:self.timeLabel.bottomAnchor constant:2],
         [self.speedLabel.leadingAnchor constraintEqualToAnchor:self.hudCard.leadingAnchor constant:8],
         [self.speedLabel.widthAnchor constraintEqualToConstant:48],
-
         [unitLbl.topAnchor constraintEqualToAnchor:self.speedLabel.bottomAnchor constant:-2],
         [unitLbl.centerXAnchor constraintEqualToAnchor:self.speedLabel.centerXAnchor],
 
-        [signCircle.trailingAnchor constraintEqualToAnchor:self.hudCard.trailingAnchor constant:-10],
-        [signCircle.bottomAnchor constraintEqualToAnchor:self.hudCard.bottomAnchor constant:-10],
-        [signCircle.widthAnchor constraintEqualToConstant:42],
-        [signCircle.heightAnchor constraintEqualToConstant:42],
-
-        [signNum.centerXAnchor constraintEqualToAnchor:signCircle.centerXAnchor],
-        [signNum.centerYAnchor constraintEqualToAnchor:signCircle.centerYAnchor]
+        [sign.trailingAnchor constraintEqualToAnchor:self.hudCard.trailingAnchor constant:-10],
+        [sign.bottomAnchor constraintEqualToAnchor:self.hudCard.bottomAnchor constant:-10],
+        [sign.widthAnchor constraintEqualToConstant:42],
+        [sign.heightAnchor constraintEqualToConstant:42],
+        [signNum.centerXAnchor constraintEqualToAnchor:sign.centerXAnchor],
+        [signNum.centerYAnchor constraintEqualToAnchor:sign.centerYAnchor]
     ]];
 
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
-    [self updateClockAndBattery];
-    self.clockTimer = [NSTimer scheduledTimerWithTimeInterval:5.0 target:self selector:@selector(updateClockAndBattery) userInfo:nil repeats:YES];
+    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
+    fmt.dateFormat = @"HH:mm";
+    self.timeLabel.text = [fmt stringFromDate:[NSDate date]];
+    float bat = [UIDevice currentDevice].batteryLevel;
+    self.batteryLabel.text = [NSString stringWithFormat:@"%d%%", (bat >= 0) ? (int)round(bat * 100) : 95];
 
     self.locationManager = [[CLLocationManager alloc] init];
     self.locationManager.delegate = self;
@@ -616,257 +997,139 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
     [self.locationManager startUpdatingLocation];
 }
 
-- (void)updateClockAndBattery {
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-    fmt.dateFormat = @"HH:mm";
-    self.timeLabel.text = [fmt stringFromDate:[NSDate date]];
-
-    float bat = [UIDevice currentDevice].batteryLevel;
-    int pct = (bat >= 0) ? (int)round(bat * 100) : 95;
-    self.batteryLabel.text = [NSString stringWithFormat:@"%d%%", pct];
-}
-
-- (void)loadSavedOrDefaultApps {
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    NSString *b1 = [ud stringForKey:@"pane1Bundle"] ?: @"com.google.ios.youtube";
-    NSString *b2 = [ud stringForKey:@"pane2Bundle"] ?: @"vn.vietmap.live";
-
-    InstalledAppItem *app1 = [self findAppByBundleID:b1] ?: self.installedApps.firstObject;
-    InstalledAppItem *app2 = [self findAppByBundleID:b2] ?: (self.installedApps.count > 1 ? self.installedApps[1] : app1);
-
-    if (app1) [self.pane1 loadAppWithBundleID:app1.bundleID name:app1.name icon:app1.icon url:app1.fallbackURL];
-    if (app2) [self.pane2 loadAppWithBundleID:app2.bundleID name:app2.name icon:app2.icon url:app2.fallbackURL];
-}
-
-- (InstalledAppItem *)findAppByBundleID:(NSString *)bundleID {
-    for (InstalledAppItem *item in self.installedApps) {
-        if ([item.bundleID isEqualToString:bundleID]) return item;
-    }
-    return nil;
-}
-
-- (void)showPickerForPane:(NSInteger)paneIndex {
-    [self.pickerOverlay removeFromSuperview];
-    self.installedApps = FetchInstalledUserApps();
-
-    NSString *title = [NSString stringWithFormat:@"Chọn app ô %ld", (long)paneIndex];
-    AppPickerOverlayView *picker = [[AppPickerOverlayView alloc] initWithTitle:title apps:self.installedApps];
-    picker.translatesAutoresizingMaskIntoConstraints = NO;
-
-    __weak typeof(self) weakSelf = self;
-    picker.onClose = ^{
-        [weakSelf.pickerOverlay removeFromSuperview];
-        weakSelf.pickerOverlay = nil;
-    };
-    picker.onSelectApp = ^(InstalledAppItem *app) {
-        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-        if (paneIndex == 1) {
-            [ud setObject:app.bundleID forKey:@"pane1Bundle"];
-            [weakSelf.pane1 loadAppWithBundleID:app.bundleID name:app.name icon:app.icon url:app.fallbackURL];
-        } else {
-            [ud setObject:app.bundleID forKey:@"pane2Bundle"];
-            [weakSelf.pane2 loadAppWithBundleID:app.bundleID name:app.name icon:app.icon url:app.fallbackURL];
-        }
-        [weakSelf.pickerOverlay removeFromSuperview];
-        weakSelf.pickerOverlay = nil;
-    };
-
-    [self.view addSubview:picker];
-    [NSLayoutConstraint activateConstraints:@[
-        [picker.topAnchor constraintEqualToAnchor:self.stageBox.topAnchor],
-        [picker.leadingAnchor constraintEqualToAnchor:self.stageBox.leadingAnchor],
-        [picker.trailingAnchor constraintEqualToAnchor:self.stageBox.trailingAnchor],
-        [picker.bottomAnchor constraintEqualToAnchor:self.stageBox.bottomAnchor]
-    ]];
-    self.pickerOverlay = picker;
-}
-
-- (void)openPickerForPane1 { [self showPickerForPane:1]; }
-- (void)openPickerForPane2 { [self showPickerForPane:2]; }
-
-- (void)paneViewDidRequestSelectApp:(AppPaneView *)paneView {
-    [self showPickerForPane:paneView.paneIndex];
-}
-
-- (void)paneViewDidRequestExpand:(AppPaneView *)paneView {
-    // Cham nut xanh la cay se mo truc tiep ung dung that tren dien thoai
-    Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
-    if (wsClass && paneView.currentBundleID.length > 0) {
-        [[wsClass defaultWorkspace] openApplicationWithBundleID:paneView.currentBundleID];
-    }
-}
-
-- (void)paneViewDidRequestReload:(AppPaneView *)paneView {}
-
-- (void)handleDividerPan:(UIPanGestureRecognizer *)gesture {
-    CGPoint loc = [gesture locationInView:self.stageBox];
-    CGFloat ratio = MIN(MAX(loc.x / MAX(self.stageBox.bounds.size.width, 1.0), 0.28), 0.72);
+- (void)onPanDivider:(UIPanGestureRecognizer *)pan {
+    if (self.layoutMode != SplitLayoutDual) return;
+    CGPoint pt = [pan locationInView:self.stageContainer];
+    CGFloat ratio = MIN(MAX(pt.x / MAX(self.stageContainer.bounds.size.width, 1.0), 0.25), 0.75);
     self.splitRatio = ratio;
-    [[NSUserDefaults standardUserDefaults] setFloat:ratio forKey:@"splitRatio"];
-    self.pane1WidthConstraint.active = NO;
-    self.pane1WidthConstraint = [self.pane1.widthAnchor constraintEqualToAnchor:self.stageBox.widthAnchor multiplier:ratio constant:-6];
-    self.pane1WidthConstraint.active = YES;
+    self.pane0WidthConstraint.active = NO;
+    self.pane0WidthConstraint = [self.panes[0].widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:ratio constant:-6];
+    self.pane0WidthConstraint.active = YES;
 }
 
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
-    CLLocation *latest = locations.lastObject;
-    if (latest && latest.speed >= 0) {
-        int kmh = (int)round(latest.speed * 3.6);
-        self.speedLabel.text = [NSString stringWithFormat:@"%d", kmh];
+    CLLocation *loc = locations.lastObject;
+    if (loc && loc.speed >= 0) {
+        self.speedLabel.text = [NSString stringWithFormat:@"%d", (int)round(loc.speed * 3.6)];
     }
+}
+
+#pragma mark - AppWindowPaneDelegate & Modals
+
+- (void)presentOverlayCard:(UIView *)card {
+    [self.activeModalOverlay removeFromSuperview];
+    card.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:card];
+    [NSLayoutConstraint activateConstraints:@[
+        [card.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
+        [card.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
+        [card.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
+        [card.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor]
+    ]];
+    self.activeModalOverlay = card;
+}
+
+- (void)windowPaneDidTapTitle:(AppWindowPane *)pane {
+    self.allApps = GetInstalledApps();
+    NSString *title = [NSString stringWithFormat:@"Chọn app ô %ld", (long)pane.slotIndex];
+    AppPickerGridView *picker = [[AppPickerGridView alloc] initWithTitle:title apps:self.allApps];
+    __weak typeof(self) weakSelf = self;
+    picker.onClose = ^{
+        [weakSelf.activeModalOverlay removeFromSuperview];
+        weakSelf.activeModalOverlay = nil;
+    };
+    picker.onPick = ^(InstalledAppItem *app) {
+        [pane hostApplication:app];
+        [weakSelf.activeModalOverlay removeFromSuperview];
+        weakSelf.activeModalOverlay = nil;
+    };
+    [self presentOverlayCard:picker];
+}
+
+- (void)windowPaneDidTapLayout:(AppWindowPane *)pane {
+    [self openLayoutSheet];
+}
+
+- (void)windowPaneDidTapClose:(AppWindowPane *)pane {
+    [self windowPaneDidTapTitle:pane];
+}
+
+- (void)openLayoutSheet {
+    SplitLayoutSheetView *sheet = [[SplitLayoutSheetView alloc] initWithCurrentMode:self.layoutMode];
+    __weak typeof(self) weakSelf = self;
+    sheet.onDismiss = ^{
+        [weakSelf.activeModalOverlay removeFromSuperview];
+        weakSelf.activeModalOverlay = nil;
+    };
+    sheet.onSelectMode = ^(SplitLayoutMode mode) {
+        [weakSelf applySplitLayout:mode];
+        [weakSelf.activeModalOverlay removeFromSuperview];
+        weakSelf.activeModalOverlay = nil;
+    };
+    sheet.onQuickLaunch = ^(NSString *bundleID) {
+        InstalledAppItem *app = [weakSelf appByBundle:bundleID];
+        if (app) [weakSelf.panes[0] hostApplication:app];
+        [weakSelf.activeModalOverlay removeFromSuperview];
+        weakSelf.activeModalOverlay = nil;
+    };
+    [self presentOverlayCard:sheet];
 }
 
 @end
 
-#pragma mark - Tab 1: Trang Chu (Danh sach ung dung da cai tren may)
+#pragma mark - Tab 1 & Tab 4
 
-@interface HomeAppsViewController : UIViewController <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
+@interface HomeListController : UITableViewController
 @property (nonatomic, strong) NSArray<InstalledAppItem *> *apps;
-@property (nonatomic, strong) UICollectionView *collectionView;
 @end
 
-@implementation HomeAppsViewController
-
+@implementation HomeListController
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Trang chủ";
     self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.apps = FetchInstalledUserApps();
-
-    UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
-    layout.minimumLineSpacing = 12;
-    layout.minimumInteritemSpacing = 12;
-    layout.sectionInset = UIEdgeInsetsMake(12, 16, 24, 16);
-
-    self.collectionView = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
-    self.collectionView.backgroundColor = [UIColor clearColor];
-    self.collectionView.dataSource = self;
-    self.collectionView.delegate = self;
-    [self.collectionView registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"HomeAppCell"];
-    self.collectionView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.collectionView];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [self.collectionView.topAnchor constraintEqualToAnchor:self.view.topAnchor],
-        [self.collectionView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
-        [self.collectionView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
-        [self.collectionView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor]
-    ]];
+    self.apps = GetInstalledApps();
 }
-
-- (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section {
-    return self.apps.count;
-}
-
-- (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath {
-    UICollectionViewCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:@"HomeAppCell" forIndexPath:indexPath];
-    for (UIView *v in cell.contentView.subviews) [v removeFromSuperview];
-
-    InstalledAppItem *app = self.apps[indexPath.item];
-    cell.contentView.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    cell.contentView.layer.cornerRadius = 16;
-
-    UIImageView *iv = [[UIImageView alloc] initWithImage:app.icon];
-    iv.layer.cornerRadius = 12;
-    iv.clipsToBounds = YES;
-    iv.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UILabel *nameLbl = [[UILabel alloc] init];
-    nameLbl.text = app.name;
-    nameLbl.font = [UIFont boldSystemFontOfSize:14];
-    nameLbl.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UILabel *idLbl = [[UILabel alloc] init];
-    idLbl.text = app.bundleID;
-    idLbl.font = [UIFont systemFontOfSize:11];
-    idLbl.textColor = [UIColor secondaryLabelColor];
-    idLbl.translatesAutoresizingMaskIntoConstraints = NO;
-
-    [cell.contentView addSubview:iv];
-    [cell.contentView addSubview:nameLbl];
-    [cell.contentView addSubview:idLbl];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [iv.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:12],
-        [iv.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
-        [iv.widthAnchor constraintEqualToConstant:44],
-        [iv.heightAnchor constraintEqualToConstant:44],
-
-        [nameLbl.topAnchor constraintEqualToAnchor:iv.topAnchor constant:4],
-        [nameLbl.leadingAnchor constraintEqualToAnchor:iv.trailingAnchor constant:12],
-        [nameLbl.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-12],
-
-        [idLbl.topAnchor constraintEqualToAnchor:nameLbl.bottomAnchor constant:2],
-        [idLbl.leadingAnchor constraintEqualToAnchor:nameLbl.leadingAnchor],
-        [idLbl.trailingAnchor constraintEqualToAnchor:nameLbl.trailingAnchor]
-    ]];
-
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.apps.count; }
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    InstalledAppItem *a = self.apps[ip.row];
+    cell.textLabel.text = a.name;
+    cell.detailTextLabel.text = a.bundleID;
+    cell.imageView.image = a.icon;
     return cell;
 }
-
-- (CGSize)collectionView:(UICollectionView *)collectionView layout:(UICollectionViewLayout *)collectionViewLayout sizeForItemAtIndexPath:(NSIndexPath *)indexPath {
-    return CGSizeMake(collectionView.bounds.size.width - 32, 68);
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    self.tabBarController.selectedIndex = 2;
 }
-
-- (void)collectionView:(UICollectionView *)collectionView didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
-    InstalledAppItem *app = self.apps[indexPath.item];
-    [[NSUserDefaults standardUserDefaults] setObject:app.bundleID forKey:@"pane1Bundle"];
-    self.tabBarController.selectedIndex = 2; // Chuyen thang sang tab Mo phong
-}
-
 @end
 
-#pragma mark - Tab 4: Tai Khoan & Cai Dat
-
-@interface AccountViewController : UITableViewController
+@interface AccountSettingsController : UITableViewController
 @end
 
-@implementation AccountViewController
+@implementation AccountSettingsController
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Tài khoản";
     self.navigationController.navigationBar.prefersLargeTitles = YES;
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
 }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    return section == 0 ? @"Thiết bị & Trạng thái CarPlay" : @"Tùy chọn hiển thị";
-}
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 2; }
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 2; }
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-    if (indexPath.section == 0) {
-        if (indexPath.row == 0) {
-            cell.textLabel.text = @"Phiên bản XemYouTube";
-            cell.detailTextLabel.text = @"2.1.5";
-        } else {
-            cell.textLabel.text = @"Quét ứng dụng hệ thống";
-            cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu ứng dụng", (unsigned long)FetchInstalledUserApps().count];
-        }
+    if (ip.row == 0) {
+        cell.textLabel.text = @"Phiên bản";
+        cell.detailTextLabel.text = @"2.1.6 (Full Split & Scene Host)";
     } else {
-        if (indexPath.row == 0) {
-            cell.textLabel.text = @"Đặt lại Ô 1 (YouTube) & Ô 2 (VIETMAP)";
-            cell.textLabel.textColor = [UIColor systemBlueColor];
-        } else {
-            cell.textLabel.text = @"Tốc độ & Biển báo 50";
-            cell.detailTextLabel.text = @"Đang bật";
-        }
+        cell.textLabel.text = @"Ứng dụng đã quét trên máy";
+        cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu app", (unsigned long)GetInstalledApps().count];
     }
     return cell;
 }
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-    [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if (indexPath.section == 1 && indexPath.row == 0) {
-        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-        [ud setObject:@"com.google.ios.youtube" forKey:@"pane1Bundle"];
-        [ud setObject:@"vn.vietmap.live" forKey:@"pane2Bundle"];
-        [ud setFloat:0.5 forKey:@"splitRatio"];
-    }
-}
 @end
 
-#pragma mark - TabBar 4 Muc & Scene Delegates
+#pragma mark - MainTabBar & Scene Delegates
 
 @interface MainTabBarController : UITabBarController
 @end
@@ -876,22 +1139,22 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
     [super viewDidLoad];
     self.tabBar.tintColor = [UIColor systemBlueColor];
 
-    UINavigationController *navHome = [[UINavigationController alloc] initWithRootViewController:[[HomeAppsViewController alloc] init]];
-    navHome.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trang chủ" image:[UIImage systemImageNamed:@"house"] selectedImage:[UIImage systemImageNamed:@"house.fill"]];
+    UINavigationController *t1 = [[UINavigationController alloc] initWithRootViewController:[[HomeListController alloc] init]];
+    t1.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trang chủ" image:[UIImage systemImageNamed:@"house"] selectedImage:[UIImage systemImageNamed:@"house.fill"]];
 
-    WorkspaceContainerViewController *carVC = [[WorkspaceContainerViewController alloc] init];
-    carVC.isCarMode = YES;
-    carVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trên xe" image:[UIImage systemImageNamed:@"car"] selectedImage:[UIImage systemImageNamed:@"car.fill"]];
+    MultiWindowWorkspaceViewController *t2 = [[MultiWindowWorkspaceViewController alloc] init];
+    t2.isCarScreen = YES;
+    t2.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trên xe" image:[UIImage systemImageNamed:@"car"] selectedImage:[UIImage systemImageNamed:@"car.fill"]];
 
-    WorkspaceContainerViewController *simVC = [[WorkspaceContainerViewController alloc] init];
-    simVC.isCarMode = NO;
-    simVC.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Mô phỏng" image:[UIImage systemImageNamed:@"play.rectangle"] selectedImage:[UIImage systemImageNamed:@"play.rectangle.fill"]];
+    MultiWindowWorkspaceViewController *t3 = [[MultiWindowWorkspaceViewController alloc] init];
+    t3.isCarScreen = NO;
+    t3.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Mô phỏng" image:[UIImage systemImageNamed:@"play.rectangle"] selectedImage:[UIImage systemImageNamed:@"play.rectangle.fill"]];
 
-    UINavigationController *navAcc = [[UINavigationController alloc] initWithRootViewController:[[AccountViewController alloc] init]];
-    navAcc.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Tài khoản" image:[UIImage systemImageNamed:@"person.crop.circle"] selectedImage:[UIImage systemImageNamed:@"person.crop.circle.fill"]];
+    UINavigationController *t4 = [[UINavigationController alloc] initWithRootViewController:[[AccountSettingsController alloc] init]];
+    t4.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Tài khoản" image:[UIImage systemImageNamed:@"person.crop.circle"] selectedImage:[UIImage systemImageNamed:@"person.crop.circle.fill"]];
 
-    self.viewControllers = @[navHome, carVC, simVC, navAcc];
-    self.selectedIndex = 2; // Mo san tab Mo phong
+    self.viewControllers = @[t1, t2, t3, t4];
+    self.selectedIndex = 2;
 }
 @end
 
@@ -900,10 +1163,10 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
 @end
 
 @implementation CarPlaySceneDelegate
-- (void)templateApplicationScene:(CPTemplateApplicationScene *)templateApplicationScene didConnectInterfaceController:(CPInterfaceController *)interfaceController toWindow:(CPWindow *)window {
+- (void)templateApplicationScene:(CPTemplateApplicationScene *)s didConnectInterfaceController:(CPInterfaceController *)ic toWindow:(CPWindow *)window {
     self.carWindow = window;
-    WorkspaceContainerViewController *vc = [[WorkspaceContainerViewController alloc] init];
-    vc.isCarMode = YES;
+    MultiWindowWorkspaceViewController *vc = [[MultiWindowWorkspaceViewController alloc] init];
+    vc.isCarScreen = YES;
     window.rootViewController = vc;
     [window makeKeyAndVisible];
 }
@@ -914,10 +1177,9 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
 @end
 
 @implementation PhoneSceneDelegate
-- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)connectionOptions {
+- (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     if (![scene isKindOfClass:[UIWindowScene class]]) return;
-    UIWindowScene *windowScene = (UIWindowScene *)scene;
-    self.window = [[UIWindow alloc] initWithWindowScene:windowScene];
+    self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     self.window.rootViewController = [[MainTabBarController alloc] init];
     [self.window makeKeyAndVisible];
 }
@@ -927,16 +1189,14 @@ static NSArray<InstalledAppItem *> *FetchInstalledUserApps(void) {
 @end
 
 @implementation AppDelegate
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    return YES;
-}
-- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options {
-    if ([connectingSceneSession.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]) {
-        UISceneConfiguration *cfg = [[UISceneConfiguration alloc] initWithName:@"CarPlayScene" sessionRole:connectingSceneSession.role];
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions { return YES; }
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
+    if ([session.role isEqualToString:CPTemplateApplicationSceneSessionRoleApplication]) {
+        UISceneConfiguration *cfg = [[UISceneConfiguration alloc] initWithName:@"CarPlayScene" sessionRole:session.role];
         cfg.delegateClass = [CarPlaySceneDelegate class];
         return cfg;
     }
-    UISceneConfiguration *cfg = [[UISceneConfiguration alloc] initWithName:@"PhoneScene" sessionRole:connectingSceneSession.role];
+    UISceneConfiguration *cfg = [[UISceneConfiguration alloc] initWithName:@"PhoneScene" sessionRole:session.role];
     cfg.delegateClass = [PhoneSceneDelegate class];
     return cfg;
 }

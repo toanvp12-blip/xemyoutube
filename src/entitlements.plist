@@ -12,6 +12,8 @@
     <true/>
     <key>com.apple.frontboard.launchapplications</key>
     <true/>
+    <key>com.apple.frontboard.scenemanager</key>
+    <true/>
     <key>com.apple.backboardd.launchapplications</key>
     <true/>
     <key>com.apple.developer.carplay-maps</key>
