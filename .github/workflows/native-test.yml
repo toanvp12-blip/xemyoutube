@@ -7,11 +7,16 @@ permissions:
   contents: read
 jobs:
   rootless-test:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare Theos
+      - name: Prepare Theos on macOS
+        if: runner.os == 'macOS'
         run: |
           brew install ldid dpkg xz
           git clone --depth=1 --recursive https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
@@ -19,6 +24,16 @@ jobs:
           sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
           mkdir -p "$RUNNER_TEMP/theos/sdks"
           ln -s "$sdk_path" "$RUNNER_TEMP/theos/sdks/iPhoneOS$sdk_version.sdk"
+      - name: Prepare Theos on Linux
+        if: runner.os == 'Linux'
+        env:
+          THEOS: ${{ runner.temp }}/theos
+          CI: "true"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot rsync curl perl zip git libxml2 libtinfo6 xz-utils dpkg-dev
+          curl -fL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos -o "$RUNNER_TEMP/install-theos.sh"
+          bash "$RUNNER_TEMP/install-theos.sh"
       - name: Prepare isolated test package
         run: |
           python3 - <<'PY'
@@ -60,7 +75,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: XemYouTube-native-rootless-test
+          name: XemYouTube-native-rootless-test-${{ runner.os }}
           path: |
             src/packages/*.deb
             native-build.log
