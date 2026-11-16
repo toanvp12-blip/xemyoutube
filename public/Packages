@@ -1,48 +1,48 @@
 Package: com.xemyoutube
-Version: 2.4.0
-Architecture: iphoneos-arm64e
-Maintainer: XemYouTube
-Installed-Size: 448
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm64e.deb
-Size: 70808
-MD5sum: f7c3c825cd73702ac425ba3c11a8ab55
-SHA1: 64642892e4b3dfd4ec79968b6a3bc10f80ba4d7d
-SHA256: 887e9b7f319ec7793d21319445a97c4515bddc207a3c4d6081f9445af4c35eb4
-Section: Tweaks
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
-Author: XemYouTube
-Name: XemYouTube
-
-Package: com.xemyoutube
-Version: 2.4.0
+Version: 2.5.0
 Architecture: iphoneos-arm
 Maintainer: XemYouTube
-Installed-Size: 448
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm.deb
-Size: 70636
-MD5sum: e0943012625dc8b73d29c5c84cfd8c2b
-SHA1: 96149226a522822d518a02eeb7e5dc99d58128b5
-SHA256: 3df849711f19a96cda92f6d81175845b74fffbc7c3e60193ccdaebe3a068431d
+Installed-Size: 660
+Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
+Filename: debs2/com.xemyoutube_2.5.0_iphoneos-arm.deb
+Size: 83024
+MD5sum: 3f4057ba9665de615a73773310ffbb1f
+SHA1: 2607126bea9fde97962976bb139277f2e1ca68a3
+SHA256: f61368978fbabcbbc7207dd334ed4a320cb3cf518503dcf05e5c08a942c13398
 Section: Tweaks
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
+Description: Ung dung & Tweak da cua so CarPlay chay song song App Goc nhu SidePlay2
 Author: XemYouTube
-Name: XemYouTube
+Name: XemYouTube (SidePlay2 Full)
 
 Package: com.xemyoutube
-Version: 2.4.0
+Version: 2.5.0
 Architecture: iphoneos-arm64
 Maintainer: XemYouTube
-Installed-Size: 448
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm64.deb
-Size: 70808
-MD5sum: 71bef2a5422c5a3efb8baef797c9a064
-SHA1: eeecc2916c8d11851fb58c7be2e9d83a2d172d75
-SHA256: c0ce8075446d4244c3ce9f8158145fdeb99faef7217ecd3b24f5ea407aca1a48
+Installed-Size: 660
+Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
+Filename: debs2/com.xemyoutube_2.5.0_iphoneos-arm64.deb
+Size: 83052
+MD5sum: fe5c56571f53c257d1f191ecdc1595c3
+SHA1: 60efc568d17a3ae665ffb17d26915d3af3de4a08
+SHA256: 8ddcd636e64687e98ae7e36603bedd7422edd5b435c9381975eb9b8ff73f0aba
 Section: Tweaks
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
+Description: Ung dung & Tweak da cua so CarPlay chay song song App Goc nhu SidePlay2
 Author: XemYouTube
-Name: XemYouTube
+Name: XemYouTube (SidePlay2 Full)
+
+Package: com.xemyoutube
+Version: 2.5.0
+Architecture: iphoneos-arm64e
+Maintainer: XemYouTube
+Installed-Size: 660
+Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
+Filename: debs2/com.xemyoutube_2.5.0_iphoneos-arm64e.deb
+Size: 83052
+MD5sum: cb531a9f8b1a61d6fd056b4548df7cf3
+SHA1: 22ed6c4ae22fce67bcce4fc3f789dc628ee656f3
+SHA256: 7c2e31dc078ca7170e7cf1105c2743207707b1dce4a9cca013dd4595abe7b63b
+Section: Tweaks
+Description: Ung dung & Tweak da cua so CarPlay chay song song App Goc nhu SidePlay2
+Author: XemYouTube
+Name: XemYouTube (SidePlay2 Full)
 
