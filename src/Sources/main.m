@@ -77,7 +77,10 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 }
 - (void)resetAll {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    for (id key in [ud dictionaryRepresentation]) [ud removeObjectForKey:key];
+    for (NSString *key in @[@"cfg_init", @"autoOpenCarPlay", @"restoreLastLayout", @"autoDimScreen", @"showSpeedBubble", @"speedLimitValue", @"defaultSplitMode"]) [ud removeObjectForKey:key];
+    [ud setBool:YES forKey:@"showSpeedBubble"];
+    [ud setInteger:50 forKey:@"speedLimitValue"];
+    [ud setInteger:1 forKey:@"defaultSplitMode"];
     [ud synchronize];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
@@ -96,7 +99,8 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 static NSString *MirrorURLForApp(NSString *bundleID, NSString *name) {
     NSString *k = [NSString stringWithFormat:@"%@ %@", bundleID.lowercaseString, name.lowercaseString];
     if ([k containsString:@"youtube"]) return @"https://m.youtube.com";
-    if ([k containsString:@"vietmap"] || [k containsString:@"maps"]) return @"https://www.google.com/maps";
+    if ([k containsString:@"vietmap"]) return nil;
+    if ([k containsString:@"maps"]) return @"https://www.google.com/maps";
     if ([k containsString:@"zing"]) return @"https://zingmp3.vn";
     if ([k containsString:@"spotify"] || [k containsString:@"nhạc"]) return @"https://open.spotify.com";
     if ([k containsString:@"tiktok"]) return @"https://www.tiktok.com";
@@ -332,6 +336,9 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
 
 - (void)openAppInPane:(InstalledAppItem *)app {
     if (!app) return;
+    if (app.mirrorURL.length == 0) {
+        [self.interactiveWebView loadHTMLString:@"<meta name='viewport' content='width=device-width'><p>VIETMAP LIVE chưa được nhúng trong bản build này. Cần bộ nhúng ứng dụng gốc; trang web không thay thế được ứng dụng.</p>" baseURL:nil];
+    }
     self.currentApp = app;
     self.emptyStateView.hidden = YES;
     self.tabStripContainer.hidden = NO;
@@ -347,16 +354,6 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     if (self.openedTabs.count > 5) [self.openedTabs removeLastObject];
     [self refreshTabStrip];
 
-    // Khoi chay ngam app goc thuc te qua LSApplicationWorkspace de tao Scene
-    Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
-    if (wsClass) {
-        id ws = [wsClass performSelector:@selector(defaultWorkspace)];
-        SEL openSel = NSSelectorFromString(@"openApplicationWithBundleID:");
-        if ([ws respondsToSelector:openSel]) {
-            ((BOOL (*)(id, SEL, id))objc_msgSend)(ws, openSel, app.bundleID);
-        }
-    }
-
     NSURL *url = [NSURL URLWithString:app.mirrorURL];
     if (url) {
         [self.interactiveWebView loadRequest:[NSURLRequest requestWithURL:url]];
@@ -364,6 +361,8 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
 }
 
 - (void)closeCurrentTab {
+    [self.interactiveWebView stopLoading];
+    [self.interactiveWebView loadHTMLString:@"" baseURL:nil];
     self.currentApp = nil;
     self.runningContainerView.hidden = YES;
     self.tabStripContainer.hidden = YES;
@@ -586,6 +585,12 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @end
 
 @implementation SimulationViewController
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    NSInteger mode = [AppSettings shared].defaultSplitMode;
+    [self rebuildWorkspaceLayout:mode == 0 ? SidePlaySplitSingle : SidePlaySplitDual];
+    self.speedCard.hidden = ![AppSettings shared].showSpeedBubble;
+}
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor colorWithRed:0.95 green:0.96 blue:0.97 alpha:1.0];
@@ -718,29 +723,94 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     return cell;
 }
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    [tv deselectRowAtIndexPath:ip animated:YES]; self.tabBarController.selectedIndex = 2;
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    InstalledAppItem *app = self.apps[ip.row];
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:app.name message:app.bundleID preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"Sao chép mã" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { [UIPasteboard generalPasteboard].string = app.bundleID; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 @end
 
 @interface CarSettingsViewController : UITableViewController
 @end
 @implementation CarSettingsViewController
-- (void)viewDidLoad { [super viewDidLoad]; self.title = @"Trên xe"; self.navigationController.navigationBar.prefersLargeTitles = YES; self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped]; }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 1; }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 1; }
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Trên xe";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+}
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 3; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil]; c.textLabel.text = @"Mở khi kết nối CarPlay"; c.accessoryView = [[UISwitch alloc] init]; return c;
+    UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    if (ip.row == 0) {
+        c.textLabel.text = @"Hiện bảng tốc độ trong mô phỏng";
+        UISwitch *toggle = [UISwitch new];
+        toggle.on = [AppSettings shared].showSpeedBubble;
+        [toggle addTarget:self action:@selector(speedChanged:) forControlEvents:UIControlEventValueChanged];
+        c.accessoryView = toggle;
+        c.selectionStyle = UITableViewCellSelectionStyleNone;
+    } else {
+        c.textLabel.text = ip.row == 1 ? @"Bố cục mặc định" : @"Ứng dụng và mã định danh";
+        c.detailTextLabel.text = ip.row == 1 ? ([AppSettings shared].defaultSplitMode == 0 ? @"Một ô" : @"Hai ô") : @"Kiểm tra";
+        c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    }
+    return c;
+}
+- (void)speedChanged:(UISwitch *)sender { [AppSettings shared].showSpeedBubble = sender.on; }
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.row == 0) return;
+    if (ip.row == 2) {
+        HomeLauncherViewController *apps = [HomeLauncherViewController new];
+        [self.navigationController pushViewController:apps animated:YES];
+        return;
+    }
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Bố cục mặc định" message:@"Áp dụng khi quay lại tab Mô phỏng." preferredStyle:UIAlertControllerStyleAlert];
+    for (NSInteger i = 0; i < 2; i++) {
+        NSInteger mode = i;
+        [a addAction:[UIAlertAction actionWithTitle:i == 0 ? @"Một ô" : @"Hai ô" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [AppSettings shared].defaultSplitMode = mode;
+            [self.tableView reloadData];
+        }]];
+    }
+    [a addAction:[UIAlertAction actionWithTitle:@"Hủy" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
 }
 @end
 
 @interface AccountProViewController : UITableViewController
 @end
 @implementation AccountProViewController
-- (void)viewDidLoad { [super viewDidLoad]; self.title = @"Tài khoản"; self.navigationController.navigationBar.prefersLargeTitles = YES; self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped]; }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 1; }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 1; }
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Tài khoản";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+}
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 2; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil]; c.textLabel.text = @"SidePro · Đã kích hoạt"; c.textLabel.textColor = [UIColor systemBlueColor]; return c;
+    UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+    c.textLabel.text = ip.row == 0 ? @"Chẩn đoán bản thử nghiệm" : @"Đặt lại cài đặt";
+    c.textLabel.textColor = ip.row == 0 ? [UIColor systemBlueColor] : [UIColor systemRedColor];
+    c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    return c;
+}
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.row == 0) {
+        NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"?";
+        NSString *message = [NSString stringWithFormat:@"XemYouTube %@\\niOS %@\\nQuét được %lu ứng dụng.\\n\\nBản build này chỉ chứa ứng dụng giao diện. Các ô đang dùng WebKit, chưa có bộ nhúng ứng dụng gốc. VIETMAP LIVE chưa chạy trong ô. Việc có Sileo không xác nhận khả năng nhúng ứng dụng.", version, [UIDevice currentDevice].systemVersion, (unsigned long)ScanDeviceApps().count];
+        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Chẩn đoán" message:message preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
+        [self presentViewController:a animated:YES completion:nil];
+    } else {
+        UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Đặt lại cài đặt?" message:@"Khôi phục bảng tốc độ và bố cục mặc định của XemYouTube." preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"Hủy" style:UIAlertActionStyleCancel handler:nil]];
+        [a addAction:[UIAlertAction actionWithTitle:@"Đặt lại" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { [[AppSettings shared] resetAll]; }]];
+        [self presentViewController:a animated:YES completion:nil];
+    }
 }
 @end
 
