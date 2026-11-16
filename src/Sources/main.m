@@ -6,6 +6,7 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 #import <spawn.h>
+#import <notify.h>
 
 extern char **environ;
 static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotification";
@@ -354,7 +355,7 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     if (self.openedTabs.count > 5) [self.openedTabs removeLastObject];
     [self refreshTabStrip];
 
-    NSURL *url = [NSURL URLWithString:app.mirrorURL];
+    NSURL *url = app.mirrorURL.length ? [NSURL URLWithString:app.mirrorURL] : nil;
     if (url) {
         [self.interactiveWebView loadRequest:[NSURLRequest requestWithURL:url]];
     }
@@ -585,6 +586,14 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @end
 
 @implementation SimulationViewController
+- (void)startNativeTest {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"Thử nhúng ứng dụng gốc" message:@"Mở không gian thử hai ô trong SpringBoard. Chưa xác nhận tương thích trên thiết bị. Nút Đóng sẽ kết thúc phiên thử. Nếu không xuất hiện, bộ tweak chưa được nạp; hãy gửi lại kết quả." preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"Hủy" style:UIAlertActionStyleCancel handler:nil]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Bắt đầu" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        notify_post("com.xemyoutube.native-test.open");
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     NSInteger mode = [AppSettings shared].defaultSplitMode;
@@ -601,6 +610,19 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 
     UILabel *bigTitle = [[UILabel alloc] init]; bigTitle.text = @"Mô phỏng"; bigTitle.font = [UIFont systemFontOfSize:34 weight:UIFontWeightBold]; bigTitle.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:bigTitle];
+    bigTitle.text = @"Mô phỏng · Web";
+    bigTitle.font = [UIFont boldSystemFontOfSize:24];
+    UIButton *native = [UIButton buttonWithType:UIButtonTypeSystem];
+    [native setTitle:@"Thử app gốc" forState:UIControlStateNormal];
+    native.translatesAutoresizingMaskIntoConstraints = NO;
+    [native addTarget:self action:@selector(startNativeTest) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:native];
+    [NSLayoutConstraint activateConstraints:@[
+        [native.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [native.centerYAnchor constraintEqualToAnchor:bigTitle.centerYAnchor],
+        [bigTitle.trailingAnchor constraintLessThanOrEqualToAnchor:native.leadingAnchor constant:-8]
+    ]];
+
 
     self.outerFrame = [[UIView alloc] init]; self.outerFrame.backgroundColor = [UIColor colorWithRed:0.96 green:0.97 blue:0.98 alpha:1.0]; self.outerFrame.layer.cornerRadius = 18; self.outerFrame.layer.borderWidth = 2.0; self.outerFrame.layer.borderColor = [UIColor colorWithWhite:0.84 alpha:1.0].CGColor; self.outerFrame.clipsToBounds = YES; self.outerFrame.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.outerFrame];
