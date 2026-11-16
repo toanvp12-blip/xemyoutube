@@ -1,16 +1,16 @@
 Origin: XemYouTube
 Label: XemYouTube
 Suite: stable
-Version: 1.0
+Version: 2.3.0
 Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
 Components: main
 Description: Kho luu tru XemYouTube CarPlay
 MD5Sum:
- 8124fab58be1dd52862a1b811378a78e 1447 Packages
- 19132725ffab59d0d7e9aa572a038783 576 Packages.gz
- d7c6683c32be6bddc9b9e7316192423e 557 Packages.zst
+ 18b97ed1f7c5f3f55c4bb94227b07c3f 1489 Packages
+ 64b0dce2cb88aac7c4b97b634f7b17fb 580 Packages.gz
+ 4a3782a07fb6e123520bea8c7476974b 572 Packages.zst
 SHA256:
- 3d51d8df935fad671e86752a9640183b95a8eb0a71ad3f7110ffedc135691ddb 1447 Packages
- 9a230dbf9dc4d304590e8b408dd6acfc1665524ecb7d248fdd1eebaddbe84b27 576 Packages.gz
- f01c6c4fdf6ebe9a3fa83f198a326609a231c4cb0c5a85d7acc7a058e55f1378 557 Packages.zst
+ d76cf4f565eef02b7191bb6a711af76c233bc2fee44e568e41ca93bf932265d3 1489 Packages
+ 3b83abec8ebf649546581f804cd6059021d57779b0199c3e6b49f419be308a8c 580 Packages.gz
+ c5534167641a0a77493837e01d4d8124893ceb5acfdaadcb3d9acf4a9cd71666 572 Packages.zst
