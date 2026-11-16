@@ -1192,7 +1192,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     return 2;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    return s == 4 ? @"XemYouTube (SidePlay2 UI) 2.2.0" : nil;
+    return s == 4 ? @"XemYouTube (SidePlay2 UI) 2.3.0" : nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {

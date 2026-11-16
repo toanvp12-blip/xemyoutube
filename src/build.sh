@@ -8,10 +8,8 @@ export THEOS=/opt/theos
 export NONINTERACTIVE=1
 sudo rm -rf $THEOS
 
-# Cai dat Theos & Toolchain (bo qua neu buoc tai SDK qua api.github.com bi gioi han)
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" || true
 
-# Tai va bo sung iOS SDK truc tiep tu kho sdks (khong ghi de neu da co)
 curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o /tmp/sdks.zip
 unzip -q /tmp/sdks.zip -d /tmp
 sudo mkdir -p $THEOS/sdks
@@ -19,25 +17,34 @@ sudo cp -rn /tmp/sdks-master/*.sdk $THEOS/sdks/
 rm -rf /tmp/sdks.zip /tmp/sdks-master
 
 cd src
-chmod +x layout/DEBIAN/postinst
+chmod 0755 layout/DEBIAN/postinst
 rm -rf ../public/debs2
 mkdir -p ../public/debs2
 
 # 1. Bien dich Rootful (iphoneos-arm)
-rm -rf packages && make clean && make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.2.0_iphoneos-arm.deb
+rm -rf packages .theos && make clean && make package FINALPACKAGE=1
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.3.0_iphoneos-arm.deb
 
 # 2. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
-rm -rf packages && make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.2.0_iphoneos-arm64.deb
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.2.0_iphoneos-arm64e.deb
+rm -rf packages .theos && make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.3.0_iphoneos-arm64.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.3.0_iphoneos-arm64e.deb
 
 cd ../public/debs2
-mkdir -p tmp_rh
-dpkg-deb -R com.xemyoutube_2.2.0_iphoneos-arm64e.deb tmp_rh
-sed -i 's/^Architecture.*/Architecture: iphoneos-arm64e/' tmp_rh/DEBIAN/control
-dpkg-deb -b tmp_rh com.xemyoutube_2.2.0_iphoneos-arm64e.deb
-rm -rf tmp_rh
+
+# Dam bao postinst va Version 2.3.0 chuan xac trong tung goi .deb
+for arch in iphoneos-arm iphoneos-arm64 iphoneos-arm64e; do
+    deb="com.xemyoutube_2.3.0_${arch}.deb"
+    rm -rf tmp_edit
+    mkdir -p tmp_edit
+    dpkg-deb -R "$deb" tmp_edit
+    sed -i "s/^Architecture.*/Architecture: ${arch}/" tmp_edit/DEBIAN/control
+    sed -i "s/^Version.*/Version: 2.3.0/" tmp_edit/DEBIAN/control
+    cp ../../src/layout/DEBIAN/postinst tmp_edit/DEBIAN/postinst
+    chmod 0755 tmp_edit/DEBIAN/postinst
+    dpkg-deb -Zxz -b tmp_edit "$deb"
+    rm -rf tmp_edit
+done
 
 cd ..
 dpkg-scanpackages -m debs2 > Packages
@@ -48,7 +55,7 @@ cat <<EOF > Release
 Origin: XemYouTube
 Label: XemYouTube
 Suite: stable
-Version: 1.0
+Version: 2.3.0
 Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
 Components: main

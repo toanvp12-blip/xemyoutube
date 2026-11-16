@@ -1,7 +1,8 @@
 #!/bin/sh
-if [ -d "/var/jb/Applications/XemYouTube.app" ]; then
-    uicache -p /var/jb/Applications/XemYouTube.app
-elif [ -d "/Applications/XemYouTube.app" ]; then
-    uicache -p /Applications/XemYouTube.app
+killall -9 XemYouTube >/dev/null 2>&1 || true
+if [ -x /var/jb/usr/bin/uicache ]; then
+    /var/jb/usr/bin/uicache -p /var/jb/Applications/XemYouTube.app >/dev/null 2>&1 || /var/jb/usr/bin/uicache -a >/dev/null 2>&1 || true
+elif [ -x /usr/bin/uicache ]; then
+    /usr/bin/uicache -p /Applications/XemYouTube.app >/dev/null 2>&1 || /usr/bin/uicache -a >/dev/null 2>&1 || true
 fi
 exit 0

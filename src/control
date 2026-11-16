@@ -1,0 +1,9 @@
+Package: com.xemyoutube
+Name: XemYouTube
+Version: 2.3.0
+Architecture: iphoneos-arm
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
+Maintainer: XemYouTube
+Author: XemYouTube
+Section: Tweaks
+Depends: firmware (>= 15.0)
