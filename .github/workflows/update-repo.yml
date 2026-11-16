@@ -9,35 +9,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install zstd & dpkg-dev
+      - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y zstd dpkg-dev
-      - name: Generate Packages & Release
+      - name: Fix deb internal architecture & Build APT Index
         run: |
-          cd public
-          dpkg-scanpackages -m debs2 > Packages.tmp
-          awk '
-          /^Filename:/ {
-            if ($0 ~ /arm64e\.deb/) arch="iphoneos-arm64e"
-            else if ($0 ~ /arm64\.deb/) arch="iphoneos-arm64"
-            else arch="iphoneos-arm"
-          }
-          { lines[NR] = $0 }
-          /^$/ {
-            for (i=start; i<=NR; i++) {
-              if (lines[i] ~ /^Architecture:/) print "Architecture: " arch
-              else print lines[i]
-            }
-            start = NR + 1
-          }
-          BEGIN { start = 1 }
-          END {
-            for (i=start; i<=NR; i++) {
-              if (lines[i] ~ /^Architecture:/) print "Architecture: " arch
-              else print lines[i]
-            }
-          }
-          ' Packages.tmp > Packages
-          rm -f Packages.tmp
+          cd public/debs2
+          for f in *.deb; do
+            if [[ "$f" == *"arm64e.deb" ]]; then target_arch="iphoneos-arm64e";
+            elif [[ "$f" == *"arm64.deb" ]]; then target_arch="iphoneos-arm64";
+            else target_arch="iphoneos-arm"; fi
+
+            mkdir -p tmp_deb
+            dpkg-deb -R "$f" tmp_deb
+            sed -i "s/^Architecture:.*/Architecture: $target_arch/" tmp_deb/DEBIAN/control
+            dpkg-deb -b tmp_deb "$f"
+            rm -rf tmp_deb
+          done
+          cd ..
+          dpkg-scanpackages -m debs2 > Packages
           gzip -9c Packages > Packages.gz
           zstd -19 -f Packages -o Packages.zst
           cat <<EOF > Release
@@ -58,9 +47,9 @@ jobs:
            $(sha256sum Packages.gz | cut -d' ' -f1) $(wc -c < Packages.gz) Packages.gz
            $(sha256sum Packages.zst | cut -d' ' -f1) $(wc -c < Packages.zst) Packages.zst
           EOF
-      - name: Commit & Push updated index
+      - name: Commit & Push updated debs and index
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/Packages public/Packages.gz public/Packages.zst public/Release
-          git diff --staged --quiet || (git commit -m "fix arm64 architecture in apt index" && git push)
+          git add public/debs2/*.deb public/Packages public/Packages.gz public/Packages.zst public/Release
+          git diff --staged --quiet || (git commit -m "fix internal deb architecture to arm64" && git push)
