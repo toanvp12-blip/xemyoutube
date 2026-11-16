@@ -1,6 +1,6 @@
 Package: com.xemyoutube
 Version: 2.1.3
-Architecture: iphoneos-arm
+Architecture: iphoneos-arm64
 Maintainer: XemYouTube
 Installed-Size: 536
 Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
@@ -40,7 +40,7 @@ Sileodepiction: https://xemyoutube.pages.dev/api/sp2/depiction
 
 Package: com.xemyoutube
 Version: 2.1.3
-Architecture: iphoneos-arm
+Architecture: iphoneos-arm64e
 Maintainer: XemYouTube
 Installed-Size: 536
 Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
