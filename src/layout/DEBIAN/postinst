@@ -1,0 +1,7 @@
+#!/bin/sh
+if [ -d "/var/jb/Applications/XemYouTube.app" ]; then
+    uicache -p /var/jb/Applications/XemYouTube.app
+elif [ -d "/Applications/XemYouTube.app" ]; then
+    uicache -p /Applications/XemYouTube.app
+fi
+exit 0

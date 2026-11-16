@@ -1,69 +1,37 @@
-name: Update APT Repo Index
+name: Build & Update APT Repo
 on:
   push:
     branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/update-repo.yml'
 permissions:
   contents: write
 jobs:
-  build-index:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install build & patch tools
+      - name: Setup Theos
+        uses: theos/theos-action@v1
+      - name: Compile Rootful & Rootless debs
         run: |
-          sudo apt-get update
-          sudo apt-get install -y zstd dpkg-dev
-      - name: Build Rootful, Rootless & RootHide debs
+          cd src
+          chmod +x layout/DEBIAN/postinst
+          make clean && make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+          make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
+      - name: Fix RootHide Architecture & Build APT Index
         run: |
+          sudo apt-get update && sudo apt-get install -y zstd dpkg-dev
           cd public/debs2
-          BASE_DEB=$(ls *.deb | head -n 1)
-          if [ -z "$BASE_DEB" ]; then exit 1; fi
-
-          mkdir -p base_extract
-          dpkg-deb -R "$BASE_DEB" base_extract
-
-          if [ -d "base_extract/var/jb" ]; then
-            cp -rn base_extract/var/jb/* base_extract/ 2>/dev/null || true
-            rm -rf base_extract/var/jb
-          fi
-
-          rm -f *.deb
-
-          # 1. ROOTFUL (iphoneos-arm)
-          mkdir -p pkg_rootful
-          cp -a base_extract/* pkg_rootful/
-          sed -i "s/^Architecture:.*/Architecture: iphoneos-arm/" pkg_rootful/DEBIAN/control
-          sed -i "s/^Depends:.*/Depends: firmware (>= 15.0)/" pkg_rootful/DEBIAN/control
-          dpkg-deb -b pkg_rootful "com.xemyoutube_2.1.3_iphoneos-arm.deb"
-
-          # 2. ROOTLESS (iphoneos-arm64)
-          mkdir -p pkg_rootless/var/jb
-          cp -a base_extract/DEBIAN pkg_rootless/
-          for dir in base_extract/*; do
-            base=$(basename "$dir")
-            if [ "$base" != "DEBIAN" ]; then
-              cp -a "$dir" pkg_rootless/var/jb/
-            fi
-          done
-          sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64/" pkg_rootless/DEBIAN/control
-          sed -i "s/^Depends:.*/Depends: firmware (>= 15.0)/" pkg_rootless/DEBIAN/control
-          for script in postinst prerm postrm preinst; do
-            if [ -f "pkg_rootless/DEBIAN/$script" ]; then
-              sed -i 's| /Applications| /var/jb/Applications|g; s| /Library| /var/jb/Library|g; s| /usr| /var/jb/usr|g' "pkg_rootless/DEBIAN/$script"
-              chmod 0755 "pkg_rootless/DEBIAN/$script"
-            fi
-          done
-          dpkg-deb -b pkg_rootless "com.xemyoutube_2.1.3_iphoneos-arm64.deb"
-
-          # 3. ROOTHIDE (iphoneos-arm64e)
-          mkdir -p pkg_roothide
-          cp -a pkg_rootless/* pkg_roothide/
-          sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64e/" pkg_roothide/DEBIAN/control
-          sed -i "s/^Depends:.*/Depends: firmware (>= 15.0)/" pkg_roothide/DEBIAN/control
-          dpkg-deb -b pkg_roothide "com.xemyoutube_2.1.3_iphoneos-arm64e.deb"
-
-          rm -rf base_extract pkg_rootful pkg_rootless pkg_roothide
-
+          mkdir -p tmp_rh
+          dpkg-deb -R com.xemyoutube_2.1.3_iphoneos-arm64e.deb tmp_rh
+          sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64e/" tmp_rh/DEBIAN/control
+          dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
+          rm -rf tmp_rh
           cd ..
           dpkg-scanpackages -m debs2 > Packages
           gzip -9c Packages > Packages.gz
@@ -86,9 +54,9 @@ jobs:
            $(sha256sum Packages.gz | cut -d' ' -f1) $(wc -c < Packages.gz) Packages.gz
            $(sha256sum Packages.zst | cut -d' ' -f1) $(wc -c < Packages.zst) Packages.zst
           EOF
-      - name: Commit & Push updated repo
+      - name: Commit & Push compiled debs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A public/
-          git diff --staged --quiet || (git commit -m "simplify Depends for universal compatibility" && git push)
+          git diff --staged --quiet || (git commit -m "build XemYouTube 2.1.3 from source" && git push)
