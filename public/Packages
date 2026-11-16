@@ -1,60 +1,48 @@
 Package: com.xemyoutube
 Version: 2.1.3
-Architecture: iphoneos-arm64
+Architecture: iphoneos-arm
 Maintainer: XemYouTube
-Installed-Size: 536
+Installed-Size: 216
 Depends: firmware (>= 15.0)
-Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
-Replaces: com.sideplay2.beta
-Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
-Size: 170440
-MD5sum: 4dbbe0eaf6475408da229894591730a9
-SHA1: 831242c2839299722b3c19240bf3e01df25af484
-SHA256: 054c23fd1548525b7885e04312456e9e743ba1f992847bb03b037e12f4aa373c
+Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+Size: 13724
+MD5sum: 954d602713bc902af4c8e60279fdafca
+SHA1: 62d673b297fc543fc7511dd46acd814af0323bbc
+SHA256: b5ddcae48c3b80ccdabb14d5c70fc398a61ed3edc175145d9def7fa6de567ca8
 Section: Tweaks
-Description: Tweak xem YouTube va da nhiem danh cho CarPlay
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
 Author: XemYouTube
-Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
-Sileodepiction: https://xemyoutube.pages.dev/api/sp2/depiction
 
 Package: com.xemyoutube
 Version: 2.1.3
-Architecture: iphoneos-arm
+Architecture: iphoneos-arm64
 Maintainer: XemYouTube
-Installed-Size: 536
+Installed-Size: 216
 Depends: firmware (>= 15.0)
-Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
-Replaces: com.sideplay2.beta
-Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
-Size: 170396
-MD5sum: 4340f3f3ac38c9034bd5b26162331705
-SHA1: 94f705d5f6b59b640fbdc01ad157ed2026b7cc09
-SHA256: 088476614b06e7475fdb2f685eb8cb5eea37b4feb224c423b0cb63de4d6dfa8d
+Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
+Size: 13814
+MD5sum: 45684ed5646c3751658b6e4e6273bedc
+SHA1: ae1fad729fabbfd6202855cfb192661693f9a80f
+SHA256: ab0a757552bb6832ee11607616ca99b96ba1a8936f8e571876fbe0eb9586e859
 Section: Tweaks
-Description: Tweak xem YouTube va da nhiem danh cho CarPlay
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
 Author: XemYouTube
-Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
-Sileodepiction: https://xemyoutube.pages.dev/api/sp2/depiction
 
 Package: com.xemyoutube
 Version: 2.1.3
 Architecture: iphoneos-arm64e
 Maintainer: XemYouTube
-Installed-Size: 536
+Installed-Size: 216
 Depends: firmware (>= 15.0)
-Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
-Replaces: com.sideplay2.beta
 Filename: debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
-Size: 170446
-MD5sum: dc37a792fe629c8cbd8a3a095c39ae07
-SHA1: bd3e21352295cfc3dec416cc36eac3a6e214f9f3
-SHA256: 8724227abbafff0378e0c8b01d8147c201dbedbde8ce10295bc1e49cff495429
+Size: 14998
+MD5sum: 85495a676facf0392da479ab9c2cdaaf
+SHA1: c4dab7873c03c24dc0e2da9265557b0f73bd3810
+SHA256: ab337d4dd9e3925f55cceeb89874f54f9532e32056c6ab51c6141f233a844ee4
 Section: Tweaks
-Description: Tweak xem YouTube va da nhiem danh cho CarPlay
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap
 Author: XemYouTube
-Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
-Sileodepiction: https://xemyoutube.pages.dev/api/sp2/depiction
 
