@@ -1,122 +1,36 @@
 name: Build & Update APT Repo
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
-      - 'src/**'
-      - '.github/workflows/update-repo.yml'
+      - "src/**"
+      - ".github/workflows/update-repo.yml"
 permissions:
   contents: write
 jobs:
   build-and-publish:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Install Theos, iOS Toolchain & SDK
+      - name: Install Theos & Packaging Tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6
-
-          export THEOS=/opt/theos
-          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
-
-          # Tai iOS Toolchain (bao gom trinh bien dich Swift/Clang cho iOS ARM64)
-          sudo mkdir -p $THEOS/toolchain/linux/iphone
-          curl -fsSL "https://github.com/sbingner/llvm-project/releases/latest/download/linux-arm64-toolchain.tar.lzma" -o toolchain.tar.lzma || \
-          curl -fsSL "https://github.com/ProcursusTeam/Procursus/releases/latest/download/iPhoneOS-toolchain-linux-x86_64.tar.zst" -o toolchain.tar.zst || true
-          if [ -f toolchain.tar.lzma ]; then
-            sudo tar --lzma -xf toolchain.tar.lzma -C $THEOS/toolchain/linux/iphone --strip-components=1
-          elif [ -f toolchain.tar.zst ]; then
-            sudo tar --zstd -xf toolchain.tar.zst -C $THEOS/toolchain/linux/iphone --strip-components=1
-          fi
-          rm -f toolchain.tar.*
-
-          # Tai iOS SDK
-          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
-          unzip -q sdks.zip
-          sudo mv sdks-master/*.sdk $THEOS/sdks/
-          rm -rf sdks.zip sdks-master
-
-          # Cai dat ldid de ky ma ung dung iOS
-          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
-          sudo chmod +x /usr/local/bin/ldid
+          brew install dpkg zstd ldid
+          git clone --recursive --depth=1 https://github.com/theos/theos.git /Users/runner/theos
 
       - name: Compile Rootful, Rootless & RootHide debs
         env:
-          THEOS: /opt/theos
+          THEOS: /Users/runner/theos
         run: |
           cd src
           chmod +x layout/DEBIAN/postinst
           mkdir -p ../public/debs2
 
-          # 1. Bien dich Rootful (iphoneos-arm)
           make clean && make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
 
-          # 2. Bien dich Rootless (iphoneos-arm64)
-          make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
-          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
-          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_
-$wfFile = "$PWD\.github\workflows\update-repo.yml"
-$buildYml = @'
-name: Build & Update APT Repo
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - '.github/workflows/update-repo.yml'
-permissions:
-  contents: write
-jobs:
-  build-and-publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Theos, iOS Toolchain & SDK
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6
-
-          export THEOS=/opt/theos
-          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
-
-          # Tai iOS Toolchain (bao gom trinh bien dich Swift/Clang cho iOS ARM64)
-          sudo mkdir -p $THEOS/toolchain/linux/iphone
-          curl -fsSL "https://github.com/sbingner/llvm-project/releases/latest/download/linux-arm64-toolchain.tar.lzma" -o toolchain.tar.lzma || \
-          curl -fsSL "https://github.com/ProcursusTeam/Procursus/releases/latest/download/iPhoneOS-toolchain-linux-x86_64.tar.zst" -o toolchain.tar.zst || true
-          if [ -f toolchain.tar.lzma ]; then
-            sudo tar --lzma -xf toolchain.tar.lzma -C $THEOS/toolchain/linux/iphone --strip-components=1
-          elif [ -f toolchain.tar.zst ]; then
-            sudo tar --zstd -xf toolchain.tar.zst -C $THEOS/toolchain/linux/iphone --strip-components=1
-          fi
-          rm -f toolchain.tar.*
-
-          # Tai iOS SDK
-          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
-          unzip -q sdks.zip
-          sudo mv sdks-master/*.sdk $THEOS/sdks/
-          rm -rf sdks.zip sdks-master
-
-          # Cai dat ldid de ky ma ung dung iOS
-          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
-          sudo chmod +x /usr/local/bin/ldid
-
-      - name: Compile Rootful, Rootless & RootHide debs
-        env:
-          THEOS: /opt/theos
-        run: |
-          cd src
-          chmod +x layout/DEBIAN/postinst
-          mkdir -p ../public/debs2
-
-          # 1. Bien dich Rootful (iphoneos-arm)
-          make clean && make package FINALPACKAGE=1
-          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
-
-          # 2. Bien dich Rootless (iphoneos-arm64)
           make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
@@ -126,7 +40,7 @@ jobs:
           cd public/debs2
           mkdir -p tmp_rh
           dpkg-deb -R com.xemyoutube_2.1.3_iphoneos-arm64e.deb tmp_rh
-          sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64e/" tmp_rh/DEBIAN/control
+          sed -i '' 's/^Architecture.*/Architecture\x3a iphoneos-arm64e/' tmp_rh/DEBIAN/control
           dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
           rm -rf tmp_rh
 
@@ -134,24 +48,23 @@ jobs:
           dpkg-scanpackages -m debs2 > Packages
           gzip -9c Packages > Packages.gz
           zstd -19 -f Packages -o Packages.zst
-          {
-            echo "Origin: XemYouTube"
-            echo "Label: XemYouTube"
-            echo "Suite: stable"
-            echo "Version: 1.0"
-            echo "Codename: ios"
-            echo "Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e"
-            echo "Components: main"
-            echo "Description: Kho luu tru XemYouTube CarPlay"
-            echo "MD5Sum:"
-            echo " $(md5sum Packages | cut -d' ' -f1) $(wc -c < Packages) Packages"
-            echo " $(md5sum Packages.gz | cut -d' ' -f1) $(wc -c < Packages.gz) Packages.gz"
-            echo " $(md5sum Packages.zst | cut -d' ' -f1) $(wc -c < Packages.zst) Packages.zst"
-            echo "SHA256:"
-            echo " $(sha256sum Packages | cut -d' ' -f1) $(wc -c < Packages) Packages"
-            echo " $(sha256sum Packages.gz | cut -d' ' -f1) $(wc -c < Packages.gz) Packages.gz"
-            echo " $(sha256sum Packages.zst | cut -d' ' -f1) $(wc -c < Packages.zst) Packages.zst"
-          } > Release
+
+          printf "Origin\x3a XemYouTube\n" > Release
+          printf "Label\x3a XemYouTube\n" >> Release
+          printf "Suite\x3a stable\n" >> Release
+          printf "Version\x3a 1.0\n" >> Release
+          printf "Codename\x3a ios\n" >> Release
+          printf "Architectures\x3a iphoneos-arm iphoneos-arm64 iphoneos-arm64e\n" >> Release
+          printf "Components\x3a main\n" >> Release
+          printf "Description\x3a Kho luu tru XemYouTube CarPlay\n" >> Release
+          printf "MD5Sum\x3a\n" >> Release
+          printf " %s %s Packages\n" "$(md5 -q Packages)" "$(wc -c < Packages | tr -d ' ')" >> Release
+          printf " %s %s Packages.gz\n" "$(md5 -q Packages.gz)" "$(wc -c < Packages.gz | tr -d ' ')" >> Release
+          printf " %s %s Packages.zst\n" "$(md5 -q Packages.zst)" "$(wc -c < Packages.zst | tr -d ' ')" >> Release
+          printf "SHA256\x3a\n" >> Release
+          printf " %s %s Packages\n" "$(shasum -a 256 Packages | awk '{print $1}')" "$(wc -c < Packages | tr -d ' ')" >> Release
+          printf " %s %s Packages.gz\n" "$(shasum -a 256 Packages.gz | awk '{print $1}')" "$(wc -c < Packages.gz | tr -d ' ')" >> Release
+          printf " %s %s Packages.zst\n" "$(shasum -a 256 Packages.zst | awk '{print $1}')" "$(wc -c < Packages.zst | tr -d ' ')" >> Release
 
       - name: Commit & Push compiled debs
         run: |
