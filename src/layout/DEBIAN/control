@@ -1,8 +1,8 @@
 Package: com.xemyoutube
-Name: XemYouTube (SidePlay2 Live App)
-Version: 2.6.0
+Name: XemYouTube (SidePlay2 Live Mirror)
+Version: 2.7.0
 Architecture: iphoneos-arm
-Description: Chay truc tiep App Goc (YouTube, VIETMAP, Zalo...) song song da cua so nhu SidePlay2
+Description: Chay song song app goc da cua so y nhu SidePlay2
 Maintainer: XemYouTube
 Author: XemYouTube
 Section: Tweaks
