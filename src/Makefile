@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = XemYouTube
 XemYouTube_FILES = Sources/main.m
-XemYouTube_FRAMEWORKS = UIKit Foundation WebKit CarPlay CoreLocation QuartzCore CoreFoundation
+XemYouTube_FRAMEWORKS = UIKit Foundation WebKit CarPlay CoreLocation QuartzCore CoreGraphics CoreFoundation
 XemYouTube_CFLAGS = -fobjc-arc -Wno-error -Wno-deprecated-declarations -Wno-unused-variable -Wno-unused-value
 XemYouTube_CODESIGN_FLAGS = -Sentitlements.plist
 
