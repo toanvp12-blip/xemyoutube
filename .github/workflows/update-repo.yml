@@ -10,19 +10,34 @@ permissions:
   contents: write
 jobs:
   build-and-publish:
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Theos & Packaging Tools
+      - name: Install Theos, Swift & iOS SDK
         run: |
-          brew install dpkg zstd ldid
-          git clone --recursive --depth=1 https://github.com/theos/theos.git /Users/runner/theos
+          sudo apt-get update
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses5
+
+          SWIFT_URL="https://download.swift.org/swift-5.10.1-release/ubuntu2404/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu24.04.tar.gz"
+          curl -fsSL "$SWIFT_URL" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz -C /usr/local --strip-components=1
+          rm -f swift.tar.gz
+
+          export THEOS=/opt/theos
+          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+          unzip -q sdks.zip
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
+          rm -rf sdks.zip sdks-master
+
+          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
 
       - name: Compile Rootful, Rootless & RootHide debs
         env:
-          THEOS: /Users/runner/theos
+          THEOS: /opt/theos
         run: |
           cd src
           chmod +x layout/DEBIAN/postinst
@@ -40,7 +55,77 @@ jobs:
           cd public/debs2
           mkdir -p tmp_rh
           dpkg-deb -R com.xemyoutube_2.1.3_iphoneos-arm64e.deb tmp_rh
-          sed -i '' 's/^Architecture.*/Architecture\x3a iphoneos-arm64e/' tmp_rh/DEBIAN/control
+          sed -i 's/^Architecture.*/Architecture\x3a iphoneos-arm64e/' tmp_rh/DEBIAN/control
+          dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
+          rm -rf tmp_rh
+
+          cd ..
+          dpkg-scanpackages -m debs2 > Packages
+          gzip -9c Packages > Packages.gz
+          zstd -19 -f Packages -o Packages.zst
+
+          printf "Origin\x3a XemYouTube\n" > Release
+          printf "Label
+$wfFile = "$PWD\.github\workflows\update-repo.yml"
+$buildYml = @'
+name: Build & Update APT Repo
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - ".github/workflows/update-repo.yml"
+permissions:
+  contents: write
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Theos, Swift & iOS SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses5
+
+          SWIFT_URL="https://download.swift.org/swift-5.10.1-release/ubuntu2404/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu24.04.tar.gz"
+          curl -fsSL "$SWIFT_URL" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz -C /usr/local --strip-components=1
+          rm -f swift.tar.gz
+
+          export THEOS=/opt/theos
+          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+          unzip -q sdks.zip
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
+          rm -rf sdks.zip sdks-master
+
+          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
+
+      - name: Compile Rootful, Rootless & RootHide debs
+        env:
+          THEOS: /opt/theos
+        run: |
+          cd src
+          chmod +x layout/DEBIAN/postinst
+          mkdir -p ../public/debs2
+
+          make clean && make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+
+          make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
+
+      - name: Fix RootHide Architecture & Build APT Index
+        run: |
+          cd public/debs2
+          mkdir -p tmp_rh
+          dpkg-deb -R com.xemyoutube_2.1.3_iphoneos-arm64e.deb tmp_rh
+          sed -i 's/^Architecture.*/Architecture\x3a iphoneos-arm64e/' tmp_rh/DEBIAN/control
           dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
           rm -rf tmp_rh
 
@@ -58,13 +143,13 @@ jobs:
           printf "Components\x3a main\n" >> Release
           printf "Description\x3a Kho luu tru XemYouTube CarPlay\n" >> Release
           printf "MD5Sum\x3a\n" >> Release
-          printf " %s %s Packages\n" "$(md5 -q Packages)" "$(wc -c < Packages | tr -d ' ')" >> Release
-          printf " %s %s Packages.gz\n" "$(md5 -q Packages.gz)" "$(wc -c < Packages.gz | tr -d ' ')" >> Release
-          printf " %s %s Packages.zst\n" "$(md5 -q Packages.zst)" "$(wc -c < Packages.zst | tr -d ' ')" >> Release
+          printf " %s %s Packages\n" "$(md5sum Packages | cut -d' ' -f1)" "$(wc -c < Packages)" >> Release
+          printf " %s %s Packages.gz\n" "$(md5sum Packages.gz | cut -d' ' -f1)" "$(wc -c < Packages.gz)" >> Release
+          printf " %s %s Packages.zst\n" "$(md5sum Packages.zst | cut -d' ' -f1)" "$(wc -c < Packages.zst)" >> Release
           printf "SHA256\x3a\n" >> Release
-          printf " %s %s Packages\n" "$(shasum -a 256 Packages | awk '{print $1}')" "$(wc -c < Packages | tr -d ' ')" >> Release
-          printf " %s %s Packages.gz\n" "$(shasum -a 256 Packages.gz | awk '{print $1}')" "$(wc -c < Packages.gz | tr -d ' ')" >> Release
-          printf " %s %s Packages.zst\n" "$(shasum -a 256 Packages.zst | awk '{print $1}')" "$(wc -c < Packages.zst | tr -d ' ')" >> Release
+          printf " %s %s Packages\n" "$(sha256sum Packages | cut -d' ' -f1)" "$(wc -c < Packages)" >> Release
+          printf " %s %s Packages.gz\n" "$(sha256sum Packages.gz | awk '{print $1}')" "$(wc -c < Packages.gz)" >> Release
+          printf " %s %s Packages.zst\n" "$(sha256sum Packages.zst | awk '{print $1}')" "$(wc -c < Packages.zst)" >> Release
 
       - name: Commit & Push compiled debs
         run: |
