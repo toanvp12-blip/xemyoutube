@@ -516,14 +516,14 @@ __attribute__((constructor)) static void XYTInstallNativeTest(void) {
                     break;
                 }
             }
-            if (!scene) { NSLog(@"[XYT native] no foreground UIWindowScene"); return; }
+            // SpringBoard may have no foreground UIWindowScene. Use its legacy window path in that case.
             XYTNativeTestController *controller = [XYTNativeTestController new];
             controller.onClose = ^{
                 XYTNativeWindow.hidden = YES;
                 XYTNativeWindow.rootViewController = nil;
                 XYTNativeWindow = nil;
             };
-            XYTNativeWindow = [[UIWindow alloc] initWithWindowScene:scene];
+            XYTNativeWindow = scene ? [[UIWindow alloc] initWithWindowScene:scene] : [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
             XYTNativeWindow.windowLevel = UIWindowLevelAlert + 1;
             XYTNativeWindow.rootViewController = controller;
             [XYTNativeWindow makeKeyAndVisible];
