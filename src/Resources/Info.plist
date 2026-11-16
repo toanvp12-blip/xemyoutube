@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>XemYouTube</string>
     <key>CFBundleIdentifier</key>
-    <string>com.xemyoutube.app</string>
+    <string>com.xemyoutube</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -19,36 +19,60 @@
     <key>CFBundleShortVersionString</key>
     <string>2.1.3</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2.1.3</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Hien thi toc do di chuyen thoi gian thuc tren man hinh CarPlay</string>
+    <string>Hiển thị tốc độ di chuyển thời gian thực trên màn hình CarPlay.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
         <true/>
         <key>UISceneConfigurations</key>
         <dict>
-            <key>UIWindowSceneSessionRoleApplication</key>
-            <array>
-                <dict>
-                    <key>UISceneConfigurationName</key>
-                    <string>PhoneScene</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>XemYouTube.PhoneSceneDelegate</string>
-                </dict>
-            </array>
             <key>CPTemplateApplicationSceneSessionRoleApplication</key>
             <array>
                 <dict>
+                    <key>UISceneClassName</key>
+                    <string>CPTemplateApplicationScene</string>
                     <key>UISceneConfigurationName</key>
                     <string>CarPlayScene</string>
                     <key>UISceneDelegateClassName</key>
-                    <string>XemYouTube.CarPlaySceneDelegate</string>
+                    <string>CarPlaySceneDelegate</string>
+                </dict>
+            </array>
+            <key>UIWindowSceneSessionRoleApplication</key>
+            <array>
+                <dict>
+                    <key>UISceneClassName</key>
+                    <string>UIWindowScene</string>
+                    <key>UISceneConfigurationName</key>
+                    <string>PhoneScene</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>PhoneSceneDelegate</string>
                 </dict>
             </array>
         </dict>
     </dict>
+    <key>UIBackgroundModes</key>
+    <array>
+        <key>audio</key>
+        <key>location</key>
+    </array>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <key>UIInterfaceOrientationPortrait</key>
+        <key>UIInterfaceOrientationLandscapeLeft</key>
+        <key>UIInterfaceOrientationLandscapeRight</key>
+    </array>
 </dict>
 </plist>
