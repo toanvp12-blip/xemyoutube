@@ -7,7 +7,16 @@ sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev cl
 export THEOS=/opt/theos
 export NONINTERACTIVE=1
 sudo rm -rf $THEOS
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+
+# Cai dat Theos & Toolchain (bo qua neu buoc tai SDK qua api.github.com bi gioi han)
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" || true
+
+# Tai va bo sung iOS SDK truc tiep tu kho sdks (khong ghi de neu da co)
+curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o /tmp/sdks.zip
+unzip -q /tmp/sdks.zip -d /tmp
+sudo mkdir -p $THEOS/sdks
+sudo cp -rn /tmp/sdks-master/*.sdk $THEOS/sdks/
+rm -rf /tmp/sdks.zip /tmp/sdks-master
 
 cd src
 chmod +x layout/DEBIAN/postinst
