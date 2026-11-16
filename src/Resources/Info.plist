@@ -35,9 +35,9 @@
     <dict/>
     <key>UISupportedInterfaceOrientations</key>
     <array>
-        <key>UIInterfaceOrientationPortrait</key>
-        <key>UIInterfaceOrientationLandscapeLeft</key>
-        <key>UIInterfaceOrientationLandscapeRight</key>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
 </dict>
 </plist>
