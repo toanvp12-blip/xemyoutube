@@ -22,57 +22,15 @@
     <string>2.7.0</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <true/>
-        <key>NSAllowsArbitraryLoadsInWebContent</key>
-        <true/>
-    </dict>
-    <key>NSLocationWhenInUseUsageDescription</key>
+<key>NSLocationWhenInUseUsageDescription</key>
     <string>Hiển thị tốc độ di chuyển thời gian thực trên màn hình CarPlay.</string>
-    <key>UIApplicationSceneManifest</key>
-    <dict>
-        <key>UIApplicationSupportsMultipleScenes</key>
-        <true/>
-        <key>UISceneConfigurations</key>
-        <dict>
-            <key>CPTemplateApplicationSceneSessionRoleApplication</key>
-            <array>
-                <dict>
-                    <key>UISceneClassName</key>
-                    <string>CPTemplateApplicationScene</string>
-                    <key>UISceneConfigurationName</key>
-                    <string>CarPlayScene</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>CarPlaySceneDelegate</string>
-                </dict>
-            </array>
-            <key>UIWindowSceneSessionRoleApplication</key>
-            <array>
-                <dict>
-                    <key>UISceneClassName</key>
-                    <string>UIWindowScene</string>
-                    <key>UISceneConfigurationName</key>
-                    <string>PhoneScene</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>PhoneSceneDelegate</string>
-                </dict>
-            </array>
-        </dict>
-    </dict>
-    <key>UIBackgroundModes</key>
-    <array>
-        <key>audio</key>
-        <key>location</key>
-    </array>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UISupportedInterfaceOrientations</key>
     <array>
-        <key>UIInterfaceOrientationPortrait</key>
-        <key>UIInterfaceOrientationLandscapeLeft</key>
-        <key>UIInterfaceOrientationLandscapeRight</key>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
 </dict>
 </plist>
