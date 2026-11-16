@@ -14,6 +14,6 @@ include $(THEOS_MAKE_PATH)/application.mk
 # Experimental SpringBoard host, delivered only as a test artifact.
 TWEAK_NAME = XemYouTubeSB
 XemYouTubeSB_FILES = Sources/Tweak.m
-XemYouTubeSB_FRAMEWORKS = UIKit Foundation CoreLocation QuartzCore
+XemYouTubeSB_FRAMEWORKS = UIKit Foundation CoreLocation QuartzCore CoreGraphics
 XemYouTubeSB_CFLAGS = -fobjc-arc
 include $(THEOS_MAKE_PATH)/tweak.mk
