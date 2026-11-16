@@ -11,14 +11,15 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/i
 
 cd src
 chmod +x layout/DEBIAN/postinst
+rm -rf ../public/debs2
 mkdir -p ../public/debs2
 
 # 1. Bien dich Rootful (iphoneos-arm)
-make clean && make package FINALPACKAGE=1
+rm -rf packages && make clean && make package FINALPACKAGE=1
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
 
 # 2. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
-make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+rm -rf packages && make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
 
