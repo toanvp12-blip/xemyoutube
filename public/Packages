@@ -1,46 +1,46 @@
 Package: com.xemyoutube
-Version: 2.3.0
-Architecture: iphoneos-arm64
-Maintainer: XemYouTube
-Installed-Size: 416
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.3.0_iphoneos-arm64.deb
-Size: 58384
-MD5sum: fe13842c3fd63eb51cb3660b9957d9a6
-SHA1: 9b49e0cf08369c500758d38fcc3710e9652f29e8
-SHA256: f1376800ac61ff2b35f6b3dd3eb845116758a5903888e61fe1c3e9d4512e46a8
-Section: Tweaks
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
-Author: XemYouTube
-Name: XemYouTube
-
-Package: com.xemyoutube
-Version: 2.3.0
+Version: 2.4.0
 Architecture: iphoneos-arm64e
 Maintainer: XemYouTube
-Installed-Size: 416
+Installed-Size: 448
 Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.3.0_iphoneos-arm64e.deb
-Size: 58492
-MD5sum: 86dde010c40638abbba4ba79cd134434
-SHA1: b793837369bba137c541b310783840b7f9142997
-SHA256: 6acc849f5a77749b499997c673fad175d2b58ba838bc9258ffad8beb8498b240
+Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm64e.deb
+Size: 70808
+MD5sum: f7c3c825cd73702ac425ba3c11a8ab55
+SHA1: 64642892e4b3dfd4ec79968b6a3bc10f80ba4d7d
+SHA256: 887e9b7f319ec7793d21319445a97c4515bddc207a3c4d6081f9445af4c35eb4
 Section: Tweaks
 Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
 Author: XemYouTube
 Name: XemYouTube
 
 Package: com.xemyoutube
-Version: 2.3.0
+Version: 2.4.0
 Architecture: iphoneos-arm
 Maintainer: XemYouTube
-Installed-Size: 416
+Installed-Size: 448
 Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.3.0_iphoneos-arm.deb
-Size: 58480
-MD5sum: a4b6b70eed3fdec7ac2d865dad09f258
-SHA1: 428ec1f9113cbdd6b56f8f5e227537419d9f9ca2
-SHA256: f2d1f4c91948e46a2bf564fb54189291afee0cbbc80150056a6fe50b8194c1c0
+Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm.deb
+Size: 70636
+MD5sum: e0943012625dc8b73d29c5c84cfd8c2b
+SHA1: 96149226a522822d518a02eeb7e5dc99d58128b5
+SHA256: 3df849711f19a96cda92f6d81175845b74fffbc7c3e60193ccdaebe3a068431d
+Section: Tweaks
+Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
+Author: XemYouTube
+Name: XemYouTube
+
+Package: com.xemyoutube
+Version: 2.4.0
+Architecture: iphoneos-arm64
+Maintainer: XemYouTube
+Installed-Size: 448
+Depends: firmware (>= 15.0)
+Filename: debs2/com.xemyoutube_2.4.0_iphoneos-arm64.deb
+Size: 70808
+MD5sum: 71bef2a5422c5a3efb8baef797c9a064
+SHA1: eeecc2916c8d11851fb58c7be2e9d83a2d172d75
+SHA256: c0ce8075446d4244c3ce9f8158145fdeb99faef7217ecd3b24f5ea407aca1a48
 Section: Tweaks
 Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
 Author: XemYouTube
