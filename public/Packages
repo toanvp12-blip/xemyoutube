@@ -7,13 +7,12 @@ Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
 Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
 Replaces: com.sideplay2.beta
 Filename: debs2/com.xemyoutube_2.1.1_iphoneos-arm.deb
-Size: 14684
-MD5sum: eef47e32677d15e7c0ab7b856f64d4da
-SHA1: bef1267e1a0db2a68126275a51e7f969e9153b44
-SHA256: 5c4991ce1f929943650ab1014d2ebcecda1c9824273d1a26d85ec2395fe5033b
+Size: 14656
+MD5sum: a64e2ef6cf84f51888a411cbf63e9368
+SHA1: dc62e258ffcdf8524b67d7e86cb5e3db51d1c76e
+SHA256: deceb6fc9557dce65706ef38edb24cb2716e561b5f6daba59ae6bafc56e48e11
 Section: Tweaks
 Description: Tweak xem YouTube va da nhiem danh cho CarPlay
-Tag: cydia::commercial
 Author: XemYouTube
 Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
@@ -28,13 +27,12 @@ Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
 Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
 Replaces: com.sideplay2.beta
 Filename: debs2/com.xemyoutube_2.1.1_iphoneos-arm64e.deb
-Size: 14864
-MD5sum: d40825fd4cc186c7833ce2b605dd04bc
-SHA1: 900e9f12d8b69e099a3e4ce3de6db70a9a144d9e
-SHA256: 652d5bc999529ea424b14535e871154199768a74002fdf6f2ff669dd3e66d5d5
+Size: 14840
+MD5sum: 10e7e271d585f5c41fd308c4f912744a
+SHA1: f6bfd3e411f14b236fca3422739f88f401f91e19
+SHA256: a36d88e1bafbc664bfc4547ed375c5f3c9753908faf42556e70a8da86472b516
 Section: Tweaks
 Description: Tweak xem YouTube va da nhiem danh cho CarPlay
-Tag: cydia::commercial
 Author: XemYouTube
 Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
@@ -49,13 +47,12 @@ Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
 Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf, com.bmt.dash, com.chou.googlemaps.vietmap
 Replaces: com.sideplay2.beta
 Filename: debs2/com.xemyoutube_2.1.1_iphoneos-arm64.deb
-Size: 14766
-MD5sum: 69c093a39c5a0a43c98e7dcbbd20b88f
-SHA1: e7e131150eebb0ec44e298f04be9bc1e06003832
-SHA256: 96a193bf52e909caf68eec53f55708660f6169f83dac12a61e04c65c54aabac9
+Size: 14776
+MD5sum: 352c78ecc44721c82394658f45bc2e31
+SHA1: 7bf619222895200ff8011a0a06ec8629181fc59b
+SHA256: e695d5e8db7b0b3d418b5bf0cd2c095ebd81939ecd3c0a894aed548ec642aa61
 Section: Tweaks
 Description: Tweak xem YouTube va da nhiem danh cho CarPlay
-Tag: cydia::commercial
 Author: XemYouTube
 Icon: https://xemyoutube.pages.dev/xemyoutube.png
 Name: XemYouTube
