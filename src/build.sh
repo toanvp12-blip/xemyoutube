@@ -4,11 +4,18 @@ set -e
 sudo apt-get update
 sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6 libncurses-dev libxml2 sudo python3
 
-# Cai dat Theos, iOS Toolchain (Swift/Clang) va iOS SDK bang trinh cai dat chinh thuc
 export THEOS=/opt/theos
 export NONINTERACTIVE=1
-sudo mkdir -p $THEOS
+sudo mkdir -p $THEOS/sdks
 sudo chown -R $(whoami) $THEOS
+
+# Tai san iOS SDK qua link truc tiep de tranh bi gioi han api.github.com
+curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+unzip -q sdks.zip
+mv sdks-master/*.sdk $THEOS/sdks/
+rm -rf sdks.zip sdks-master
+
+# Chay trinh cai dat Theos & iOS Toolchain (tu dong bo qua buoc tai SDK)
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
 
 cd src
