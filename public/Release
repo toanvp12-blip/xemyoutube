@@ -5,4 +5,12 @@ Version: 1.0
 Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
 Components: main
-Description: Kho luu tru chinh thuc cua XemYouTube Tweak
+Description: Kho luu tru XemYouTube CarPlay
+MD5Sum:
+ d36c6debf18243507768af6e36c6223d 2420 Packages
+ 363b45f386c7dac297bf34c38fc89f81 726 Packages.gz
+ a9ed6bdc687e2fc3b9d92977ae63ff03 700 Packages.zst
+SHA256:
+ d538d6b7fb32973c8f25dc9e13ba48ddf3d34ccfa3c3443b0120b0f171690b73 2420 Packages
+ cfc42ccb7427c1a060554a425defc933ead9bf6dd7a0a77d30485b92e2212d40 726 Packages.gz
+ 25e28aa91ddab10bb8b24e571888c0ac8530f2e9046555d3fe0caf6f8ad1186e 700 Packages.zst
