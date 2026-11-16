@@ -1,9 +1,9 @@
 Package: com.xemyoutube
-Name: XemYouTube
-Version: 2.4.0
+Name: XemYouTube (SidePlay2 Full)
+Version: 2.5.0
 Architecture: iphoneos-arm
-Description: Ung dung xem YouTube va da nhiem CarPlay doc lap (SidePlay UI)
+Description: Ung dung & Tweak da cua so CarPlay chay song song App Goc nhu SidePlay2
 Maintainer: XemYouTube
 Author: XemYouTube
 Section: Tweaks
-Depends: firmware (>= 15.0)
+Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader

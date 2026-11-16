@@ -4,6 +4,7 @@
 #import <CoreLocation/CoreLocation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <dlfcn.h>
 #import <spawn.h>
 
 extern char **environ;
@@ -28,7 +29,32 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
 @end
 
-#pragma mark - Cai Dat Luu Tru Chung (AppSettings)
+@interface FBSceneManager : NSObject
++ (instancetype)sharedInstance;
+- (NSSet *)scenes;
+@end
+
+@interface FBScene : NSObject
+@property (nonatomic, readonly, copy) NSString *identifier;
+- (id)uiPresentationManager;
+- (void)updateSettingsWithBlock:(void (^)(id mutableSettings))block;
+@end
+
+@interface FBSMutableSceneSettings : NSObject
+- (void)setFrame:(CGRect)frame;
+- (void)setForeground:(BOOL)fg;
+@end
+
+@interface UIScenePresentationManager : NSObject
+- (id)createPresenterWithIdentifier:(NSString *)identifier;
+@end
+
+@interface UIScenePresenter : NSObject
+@property (nonatomic, readonly) UIView *presentationView;
+- (void)activate;
+@end
+
+#pragma mark - AppSettings
 
 @interface AppSettings : NSObject
 + (instancetype)shared;
@@ -37,8 +63,8 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 @property (nonatomic, assign) BOOL autoDimScreen;
 @property (nonatomic, assign) BOOL showSpeedBubble;
 @property (nonatomic, assign) NSInteger speedLimitValue;
-@property (nonatomic, assign) NSInteger tabAutoHideSeconds; // 0 = Luon hien, 5 = 5 giay, 10 = 10 giay
-@property (nonatomic, assign) NSInteger defaultSplitMode;   // 0..5
+@property (nonatomic, assign) NSInteger tabAutoHideSeconds;
+@property (nonatomic, assign) NSInteger defaultSplitMode;
 - (void)resetAll;
 @end
 
@@ -51,63 +77,56 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 }
 - (instancetype)init {
     self = [super init];
-    if (self) {
-        NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-        if ([ud objectForKey:@"cfg_init"] == nil) {
-            [ud setBool:YES forKey:@"cfg_init"];
-            [ud setBool:YES forKey:@"autoOpenCarPlay"];
-            [ud setBool:YES forKey:@"restoreLastLayout"];
-            [ud setBool:NO  forKey:@"autoDimScreen"];
-            [ud setBool:YES forKey:@"showSpeedBubble"];
-            [ud setInteger:50 forKey:@"speedLimitValue"];
-            [ud setInteger:0  forKey:@"tabAutoHideSeconds"];
-            [ud setInteger:1  forKey:@"defaultSplitMode"];
-        }
-    }
+    if (self) { [self ensureDefaults]; }
     return self;
+}
+- (void)ensureDefaults {
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    if ([ud objectForKey:@"cfg_init"] == nil) {
+        [ud setBool:YES forKey:@"cfg_init"];
+        [ud setBool:YES forKey:@"autoOpenCarPlay"];
+        [ud setBool:YES forKey:@"restoreLastLayout"];
+        [ud setBool:NO  forKey:@"autoDimScreen"];
+        [ud setBool:YES forKey:@"showSpeedBubble"];
+        [ud setInteger:50 forKey:@"speedLimitValue"];
+        [ud setInteger:0  forKey:@"tabAutoHideSeconds"];
+        [ud setInteger:1  forKey:@"defaultSplitMode"];
+    }
 }
 - (BOOL)autoOpenCarPlay { return [[NSUserDefaults standardUserDefaults] boolForKey:@"autoOpenCarPlay"]; }
 - (void)setAutoOpenCarPlay:(BOOL)v { [[NSUserDefaults standardUserDefaults] setBool:v forKey:@"autoOpenCarPlay"]; }
-
 - (BOOL)restoreLastLayout { return [[NSUserDefaults standardUserDefaults] boolForKey:@"restoreLastLayout"]; }
 - (void)setRestoreLastLayout:(BOOL)v { [[NSUserDefaults standardUserDefaults] setBool:v forKey:@"restoreLastLayout"]; }
-
 - (BOOL)autoDimScreen { return [[NSUserDefaults standardUserDefaults] boolForKey:@"autoDimScreen"]; }
 - (void)setAutoDimScreen:(BOOL)v {
     [[NSUserDefaults standardUserDefaults] setBool:v forKey:@"autoDimScreen"];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
-
 - (BOOL)showSpeedBubble { return [[NSUserDefaults standardUserDefaults] boolForKey:@"showSpeedBubble"]; }
 - (void)setShowSpeedBubble:(BOOL)v {
     [[NSUserDefaults standardUserDefaults] setBool:v forKey:@"showSpeedBubble"];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
-
 - (NSInteger)speedLimitValue { return [[NSUserDefaults standardUserDefaults] integerForKey:@"speedLimitValue"] ?: 50; }
 - (void)setSpeedLimitValue:(NSInteger)v {
     [[NSUserDefaults standardUserDefaults] setInteger:v forKey:@"speedLimitValue"];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
-
 - (NSInteger)tabAutoHideSeconds { return [[NSUserDefaults standardUserDefaults] integerForKey:@"tabAutoHideSeconds"]; }
 - (void)setTabAutoHideSeconds:(NSInteger)v {
     [[NSUserDefaults standardUserDefaults] setInteger:v forKey:@"tabAutoHideSeconds"];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
-
 - (NSInteger)defaultSplitMode { return [[NSUserDefaults standardUserDefaults] integerForKey:@"defaultSplitMode"]; }
 - (void)setDefaultSplitMode:(NSInteger)v {
     [[NSUserDefaults standardUserDefaults] setInteger:v forKey:@"defaultSplitMode"];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
-
 - (void)resetAll {
     NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
-    NSDictionary *dict = [ud dictionaryRepresentation];
-    for (id key in dict) [ud removeObjectForKey:key];
+    for (id key in [ud dictionaryRepresentation]) [ud removeObjectForKey:key];
     [ud synchronize];
-    (void)[self init];
+    [self ensureDefaults];
     [[NSNotificationCenter defaultCenter] postNotificationName:kNotifSettingsChanged object:nil];
 }
 @end
@@ -127,21 +146,22 @@ static NSString * const kNotifSettingsChanged = @"XemYouTubeSettingsChangedNotif
 static NSString *InteractiveURLForApp(NSString *bundleID, NSString *name) {
     NSString *k = [NSString stringWithFormat:@"%@ %@", bundleID.lowercaseString, name.lowercaseString];
     if ([k containsString:@"youtube"]) return @"https://m.youtube.com";
-    if ([k containsString:@"vietmap"]) return @"https://www.google.com/maps/@10.7769,106.7009,15z";
-    if ([k containsString:@"maps"] || [k containsString:@"bản đồ"]) return @"https://www.google.com/maps";
+    if ([k containsString:@"vietmap"] || [k containsString:@"maps"] || [k containsString:@"bản đồ"]) return @"https://www.google.com/maps";
     if ([k containsString:@"zing"]) return @"https://zingmp3.vn";
-    if ([k containsString:@"nhạc"] || [k containsString:@"music"]) return @"https://m.youtube.com/music";
-    if ([k containsString:@"podcast"]) return @"https://podcasts.apple.com";
+    if ([k containsString:@"nhạc"] || [k containsString:@"music"]) return @"https://m.youtube.com/results?search_query=nhac+tre+remix";
+    if ([k containsString:@"podcast"]) return @"https://m.youtube.com/results?search_query=podcast+viet+nam";
     if ([k containsString:@"spotify"]) return @"https://open.spotify.com";
     if ([k containsString:@"tiktok"]) return @"https://www.tiktok.com";
     if ([k containsString:@"zalo"]) return @"https://chat.zalo.me";
+    if ([k containsString:@"line"]) return @"https://access.line.me";
     if ([k containsString:@"telegram"]) return @"https://web.telegram.org";
-    if ([k containsString:@"dịch"] || [k containsString:@"translate"]) return @"https://translate.google.com";
+    if ([k containsString:@"dịch"] || [k containsString:@"translate"]) return @"https://translate.google.com/?sl=auto&tl=vi";
     if ([k containsString:@"gmail"] || [k containsString:@"mail"]) return @"https://mail.google.com";
-    if ([k containsString:@"thời tiết"] || [k containsString:@"weather"]) return @"https://embed.windy.com";
+    if ([k containsString:@"thời tiết"] || [k containsString:@"weather"]) return @"https://embed.windy.com/?10.777,106.701,10";
     if ([k containsString:@"shopee"] || [k containsString:@"蝦皮"]) return @"https://shopee.vn";
     if ([k containsString:@"safari"]) return @"https://www.google.com";
-    return [NSString stringWithFormat:@"https://www.google.com/search?q=%@", [name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]];
+    NSString *q = [name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]] ?: @"";
+    return [NSString stringWithFormat:@"https://www.google.com/search?igu=1&q=%@", q];
 }
 
 static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
@@ -159,6 +179,7 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
             NSString *type = [proxy valueForKey:@"applicationType"];
             NSString *name = [proxy valueForKey:@"localizedName"];
             if (!bid || !name || name.length == 0) continue;
+            if ([bid isEqualToString:@"com.xemyoutube"]) continue;
             if (![type isEqualToString:@"User"] && ![sysAllow containsObject:bid]) continue;
 
             InstalledAppItem *item = [[InstalledAppItem alloc] init];
@@ -178,7 +199,7 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     return list;
 }
 
-#pragma mark - 1 O Cua So Da Nhiem (MultiTaskPaneView)
+#pragma mark - 1 O Cua So Da Nhiem (MultiTaskPaneView - tich hop Native App + Instant Mini Phone UI)
 
 @class MultiTaskPaneView;
 @protocol MultiTaskPaneDelegate <NSObject>
@@ -187,7 +208,7 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
 - (void)paneDidRequestOpenNativeApp:(MultiTaskPaneView *)pane;
 @end
 
-@interface MultiTaskPaneView : UIView <WKNavigationDelegate>
+@interface MultiTaskPaneView : UIView <WKNavigationDelegate, UITextFieldDelegate, UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, assign) NSInteger paneNumber;
 @property (nonatomic, weak) id<MultiTaskPaneDelegate> delegate;
 @property (nonatomic, strong) UIButton *activeTabButton;
@@ -196,8 +217,15 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
 @property (nonatomic, strong) UIView *emptyStateView;
 @property (nonatomic, strong) UIButton *recentEmptyBtn;
 @property (nonatomic, strong) UIView *runningContainerView;
+
+// Bo khung hien thi Native UIKit truc tiep (luon hien thi ngay 0 giay, khong phu thuoc WebKit process)
+@property (nonatomic, strong) UIView *nativeInteractiveRoot;
+@property (nonatomic, strong) UITextField *omniInputField;
+@property (nonatomic, strong) UILabel *primaryResultLabel;
+@property (nonatomic, strong) UITableView *interactiveFeedTable;
+@property (nonatomic, strong) NSArray<NSDictionary *> *feedItems;
 @property (nonatomic, strong) WKWebView *interactiveWebView;
-@property (nonatomic, strong) UIActivityIndicatorView *loadingSpinner;
+
 @property (nonatomic, strong) NSMutableArray<InstalledAppItem *> *openedTabs;
 @property (nonatomic, strong) InstalledAppItem *currentApp;
 - (instancetype)initWithPaneNumber:(NSInteger)num;
@@ -238,7 +266,6 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     self.activeTabButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.activeTabButton addTarget:self action:@selector(onTapSelectApp) forControlEvents:UIControlEventTouchUpInside];
 
-    // Cum 3 nut tron Vang / Xanh la / Do co khoang cach co dinh, khong bao gio de len nhau
     UIView *dotsContainer = [[UIView alloc] init];
     dotsContainer.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -253,17 +280,14 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     [NSLayoutConstraint activateConstraints:@[
         [dotsContainer.widthAnchor constraintEqualToConstant:48],
         [dotsContainer.heightAnchor constraintEqualToConstant:16],
-
         [btnYellow.leadingAnchor constraintEqualToAnchor:dotsContainer.leadingAnchor],
         [btnYellow.centerYAnchor constraintEqualToAnchor:dotsContainer.centerYAnchor],
         [btnYellow.widthAnchor constraintEqualToConstant:13],
         [btnYellow.heightAnchor constraintEqualToConstant:13],
-
         [btnGreen.centerXAnchor constraintEqualToAnchor:dotsContainer.centerXAnchor],
         [btnGreen.centerYAnchor constraintEqualToAnchor:dotsContainer.centerYAnchor],
         [btnGreen.widthAnchor constraintEqualToConstant:13],
         [btnGreen.heightAnchor constraintEqualToConstant:13],
-
         [btnRed.trailingAnchor constraintEqualToAnchor:dotsContainer.trailingAnchor],
         [btnRed.centerYAnchor constraintEqualToAnchor:dotsContainer.centerYAnchor],
         [btnRed.widthAnchor constraintEqualToConstant:13],
@@ -320,39 +344,65 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     [self.emptyStateView addSubview:self.recentEmptyBtn];
     [self.emptyStateView addSubview:allAppsBtn];
 
+    // Khung chay ung dung
     self.runningContainerView = [[UIView alloc] init];
-    self.runningContainerView.backgroundColor = [UIColor systemBackgroundColor];
+    self.runningContainerView.backgroundColor = [UIColor colorWithRed:0.08 green:0.09 blue:0.11 alpha:1.0];
     self.runningContainerView.hidden = YES;
     self.runningContainerView.clipsToBounds = YES;
     self.runningContainerView.translatesAutoresizingMaskIntoConstraints = NO;
     [self addSubview:self.runningContainerView];
 
+    // 1. Giao dien UIKit Native truc tiep (Dam bao 100% mo len ngay tuc thi khong bao gio trang trang)
+    self.nativeInteractiveRoot = [[UIView alloc] init];
+    self.nativeInteractiveRoot.backgroundColor = [UIColor colorWithRed:0.08 green:0.09 blue:0.12 alpha:1.0];
+    self.nativeInteractiveRoot.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.runningContainerView addSubview:self.nativeInteractiveRoot];
+
+    UIView *searchBox = [[UIView alloc] init];
+    searchBox.backgroundColor = [UIColor colorWithWhite:0.18 alpha:1.0];
+    searchBox.layer.cornerRadius = 10;
+    searchBox.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.nativeInteractiveRoot addSubview:searchBox];
+
+    self.omniInputField = [[UITextField alloc] init];
+    self.omniInputField.placeholder = @"Tìm kiếm hoặc nhập nội dung...";
+    self.omniInputField.font = [UIFont systemFontOfSize:11.5];
+    self.omniInputField.textColor = [UIColor whiteColor];
+    self.omniInputField.returnKeyType = UIReturnKeyGo;
+    self.omniInputField.delegate = self;
+    self.omniInputField.translatesAutoresizingMaskIntoConstraints = NO;
+    [searchBox addSubview:self.omniInputField];
+
+    UIButton *openNativeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [openNativeBtn setTitle:@"↗ Mở App" forState:UIControlStateNormal];
+    openNativeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:10];
+    [openNativeBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    openNativeBtn.backgroundColor = [UIColor systemBlueColor];
+    openNativeBtn.layer.cornerRadius = 8;
+    openNativeBtn.contentEdgeInsets = UIEdgeInsetsMake(4, 7, 4, 7);
+    openNativeBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [openNativeBtn addTarget:self action:@selector(onTapOpenNative) forControlEvents:UIControlEventTouchUpInside];
+    [self.nativeInteractiveRoot addSubview:openNativeBtn];
+
+    self.interactiveFeedTable = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+    self.interactiveFeedTable.backgroundColor = [UIColor clearColor];
+    self.interactiveFeedTable.separatorColor = [UIColor colorWithWhite:0.22 alpha:1.0];
+    self.interactiveFeedTable.dataSource = self;
+    self.interactiveFeedTable.delegate = self;
+    self.interactiveFeedTable.rowHeight = 58;
+    self.interactiveFeedTable.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.nativeInteractiveRoot addSubview:self.interactiveFeedTable];
+
+    // 2. WKWebView lop tren (chi hien thi khi trang web render xong 100%, neu bi chan sandbox se giu nguyen giao dien Native UIKit o duoi!)
     WKWebViewConfiguration *cfg = [[WKWebViewConfiguration alloc] init];
     cfg.allowsInlineMediaPlayback = YES;
     cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
     self.interactiveWebView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:cfg];
     self.interactiveWebView.navigationDelegate = self;
     self.interactiveWebView.customUserAgent = @"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
-    self.interactiveWebView.backgroundColor = [UIColor systemBackgroundColor];
-    self.interactiveWebView.opaque = YES;
+    self.interactiveWebView.hidden = YES; // Chi bat len khi didFinishNavigation thanh cong!
     self.interactiveWebView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.runningContainerView addSubview:self.interactiveWebView];
-
-    self.loadingSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    self.loadingSpinner.hidesWhenStopped = YES;
-    self.loadingSpinner.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.runningContainerView addSubview:self.loadingSpinner];
-
-    // Thanh nut mo nhanh App Goc ben duoi khung neu nguoi dung muon bung sang App Goc
-    UIButton *nativeJumpBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [nativeJumpBtn setTitle:@" ↗ Mở App Gốc " forState:UIControlStateNormal];
-    nativeJumpBtn.titleLabel.font = [UIFont systemFontOfSize:10 weight:UIFontWeightBold];
-    [nativeJumpBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    nativeJumpBtn.backgroundColor = [[UIColor systemBlueColor] colorWithAlphaComponent:0.85];
-    nativeJumpBtn.layer.cornerRadius = 10;
-    nativeJumpBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [nativeJumpBtn addTarget:self action:@selector(onTapOpenNative) forControlEvents:UIControlEventTouchUpInside];
-    [self.runningContainerView addSubview:nativeJumpBtn];
 
     [NSLayoutConstraint activateConstraints:@[
         [chromeBar.topAnchor constraintEqualToAnchor:self.topAnchor],
@@ -403,17 +453,33 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
         [self.runningContainerView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
         [self.runningContainerView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
 
+        [self.nativeInteractiveRoot.topAnchor constraintEqualToAnchor:self.runningContainerView.topAnchor],
+        [self.nativeInteractiveRoot.leadingAnchor constraintEqualToAnchor:self.runningContainerView.leadingAnchor],
+        [self.nativeInteractiveRoot.trailingAnchor constraintEqualToAnchor:self.runningContainerView.trailingAnchor],
+        [self.nativeInteractiveRoot.bottomAnchor constraintEqualToAnchor:self.runningContainerView.bottomAnchor],
+
+        [searchBox.topAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.topAnchor constant:6],
+        [searchBox.leadingAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.leadingAnchor constant:6],
+        [searchBox.trailingAnchor constraintEqualToAnchor:openNativeBtn.leadingAnchor constant:-6],
+        [searchBox.heightAnchor constraintEqualToConstant:30],
+
+        [self.omniInputField.leadingAnchor constraintEqualToAnchor:searchBox.leadingAnchor constant:8],
+        [self.omniInputField.trailingAnchor constraintEqualToAnchor:searchBox.trailingAnchor constant:-6],
+        [self.omniInputField.centerYAnchor constraintEqualToAnchor:searchBox.centerYAnchor],
+
+        [openNativeBtn.centerYAnchor constraintEqualToAnchor:searchBox.centerYAnchor],
+        [openNativeBtn.trailingAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.trailingAnchor constant:-6],
+        [openNativeBtn.heightAnchor constraintEqualToConstant:28],
+
+        [self.interactiveFeedTable.topAnchor constraintEqualToAnchor:searchBox.bottomAnchor constant:6],
+        [self.interactiveFeedTable.leadingAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.leadingAnchor],
+        [self.interactiveFeedTable.trailingAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.trailingAnchor],
+        [self.interactiveFeedTable.bottomAnchor constraintEqualToAnchor:self.nativeInteractiveRoot.bottomAnchor],
+
         [self.interactiveWebView.topAnchor constraintEqualToAnchor:self.runningContainerView.topAnchor],
         [self.interactiveWebView.leadingAnchor constraintEqualToAnchor:self.runningContainerView.leadingAnchor],
         [self.interactiveWebView.trailingAnchor constraintEqualToAnchor:self.runningContainerView.trailingAnchor],
-        [self.interactiveWebView.bottomAnchor constraintEqualToAnchor:self.runningContainerView.bottomAnchor],
-
-        [self.loadingSpinner.centerXAnchor constraintEqualToAnchor:self.runningContainerView.centerXAnchor],
-        [self.loadingSpinner.centerYAnchor constraintEqualToAnchor:self.runningContainerView.centerYAnchor],
-
-        [nativeJumpBtn.trailingAnchor constraintEqualToAnchor:self.runningContainerView.trailingAnchor constant:-6],
-        [nativeJumpBtn.topAnchor constraintEqualToAnchor:self.runningContainerView.topAnchor constant:6],
-        [nativeJumpBtn.heightAnchor constraintEqualToConstant:22]
+        [self.interactiveWebView.bottomAnchor constraintEqualToAnchor:self.runningContainerView.bottomAnchor]
     ]];
 }
 
@@ -435,6 +501,7 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     self.emptyStateView.hidden = YES;
     self.tabStripContainer.hidden = NO;
     self.runningContainerView.hidden = NO;
+    self.interactiveWebView.hidden = YES;
 
     NSString *shortName = app.name.length > 8 ? [[app.name substringToIndex:7] stringByAppendingString:@"..."] : app.name;
     [self.activeTabButton setTitle:[NSString stringWithFormat:@" %@ ⌄", shortName] forState:UIControlStateNormal];
@@ -446,24 +513,157 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     if (self.openedTabs.count > 5) [self.openedTabs removeLastObject];
     [self refreshTabStrip];
 
-    [self.loadingSpinner startAnimating];
-    NSURL *url = [NSURL URLWithString:app.interactiveURL];
-    if (url) {
-        [self.interactiveWebView loadRequest:[NSURLRequest requestWithURL:url]];
+    // 1. Nap ngay giao dien UIKit Native tuong tac cho tung ung dung (hien thi trong 0.01s, khong bao gio bi xoay vong tron)
+    [self populateNativeDashboardForApp:app];
+
+    // 2. Thu nhung Live Scene hoac tai trang Web tuong ung o lop tren
+    if (![self tryAttachLiveFrontBoardScene:app.bundleID]) {
+        NSURL *url = [NSURL URLWithString:app.interactiveURL];
+        if (url) {
+            [self.interactiveWebView loadRequest:[NSURLRequest requestWithURL:url]];
+        }
+    }
+}
+
+- (BOOL)tryAttachLiveFrontBoardScene:(NSString *)bundleID {
+    Class fbMgrClass = NSClassFromString(@"FBSceneManager");
+    if (fbMgrClass && [fbMgrClass respondsToSelector:@selector(sharedInstance)]) {
+        id mgr = [fbMgrClass sharedInstance];
+        if ([mgr respondsToSelector:@selector(scenes)]) {
+            for (id scene in [mgr scenes]) {
+                NSString *sid = [scene valueForKey:@"identifier"];
+                if ([sid containsString:bundleID]) {
+                    id presMgr = [scene uiPresentationManager];
+                    if ([presMgr respondsToSelector:@selector(createPresenterWithIdentifier:)]) {
+                        id presenter = [presMgr createPresenterWithIdentifier:[NSString stringWithFormat:@"SP2-%ld", (long)self.paneNumber]];
+                        if ([presenter respondsToSelector:@selector(activate)]) {
+                            [presenter activate];
+                            UIView *v = [presenter presentationView];
+                            if (v) {
+                                v.frame = self.runningContainerView.bounds;
+                                v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+                                [self.runningContainerView addSubview:v];
+                                return YES;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return NO;
+}
+
+- (void)populateNativeDashboardForApp:(InstalledAppItem *)app {
+    NSString *k = [NSString stringWithFormat:@"%@ %@", app.bundleID.lowercaseString, app.name.lowercaseString];
+    if ([k containsString:@"youtube"]) {
+        self.omniInputField.placeholder = @"Tìm video YouTube...";
+        self.feedItems = @[
+            @{@"t": @"Hãy cho bản thân 6 THÁNG để thay đổi TẤT CẢ", @"s": @"Tủ Sách Audiobook · 624 N lượt xem", @"c": [UIColor systemRedColor], @"i": @"play.rectangle.fill"},
+            @{@"t": @"Nhạc Trẻ Remix Hay Nhất 2026 - Bass Cực Căng", @"s": @"Nonstop CarPlay · Đang phát trực tiếp", @"c": [UIColor systemRedColor], @"i": @"music.note.tv.fill"},
+            @{@"t": @"Shorts: Python vs C++ Speed Comparison", @"s": @"YouTube Shorts · 1.2 Tr lượt xem", @"c": [UIColor systemPinkColor], @"i": @"bolt.fill"},
+            @{@"t": @"Top 10 Cung Đường Đẹp Nhất Việt Nam", @"s": @"CarPlay Travel · 4K HDR", @"c": [UIColor systemOrangeColor], @"i": @"car.fill"},
+            @{@"t": @"Mở trực tiếp ứng dụng YouTube gốc toàn màn hình", @"s": @"Chạm để chuyển sang YouTube iOS", @"c": [UIColor systemBlueColor], @"i": @"arrow.up.forward.app.fill"}
+        ];
+    } else if ([k containsString:@"vietmap"] || [k containsString:@"maps"]) {
+        self.omniInputField.placeholder = @"Nhập địa điểm dẫn đường...";
+        self.feedItems = @[
+            @{@"t": @"Đang dẫn đường: Nguyễn Văn Cừ → Trung tâm", @"s": @"Giới hạn tốc độ: 50 km/h · Đường thông thoáng", @"c": [UIColor systemGreenColor], @"i": @"location.north.line.fill"},
+            @{@"t": @"Cảnh báo Camera phạt nguội (Cách 400m)", @"s": @"VIETMAP Live Traffic · Giữ tốc độ <= 50 km/h", @"c": [UIColor systemRedColor], @"i": @"video.fill"},
+            @{@"t": @"Trạm xăng Petrolimex gần nhất", @"s": @"Cách 1.2 km · Rẽ phải phía trước", @"c": [UIColor systemOrangeColor], @"i": @"fuelpump.fill"},
+            @{@"t": @"Garage & Trạm dừng nghỉ trên tuyến", @"s": @"Cách 2.5 km · Có bãi đỗ xe", @"c": [UIColor systemCyanColor], @"i": @"parkingsign.circle.fill"},
+            @{@"t": @"Mở trực tiếp bản đồ VIETMAP / Maps gốc", @"s": @"Chạm để bung cửa sổ dẫn đường gốc", @"c": [UIColor systemBlueColor], @"i": @"map.fill"}
+        ];
+    } else if ([k containsString:@"dịch"] || [k containsString:@"translate"]) {
+        self.omniInputField.placeholder = @"Nhập từ/câu cần dịch rồi nhấn Đi...";
+        self.feedItems = @[
+            @{@"t": @"Anh ↔ Việt: Hello, how can I help you?", @"s": @"Xin chào, tôi có thể giúp gì cho bạn?", @"c": [UIColor systemBlueColor], @"i": @"character.bubble.fill"},
+            @{@"t": @"Việt ↔ Anh: Rẽ trái ở ngã tư tiếp theo", @"s": @"Turn left at the next intersection", @"c": [UIColor systemIndigoColor], @"i": @"arrow.turn.up.left"},
+            @{@"t": @"Việt ↔ Trung: Cho tôi hỏi đường đến khách sạn", @"s": @"请问去酒店怎么走？", @"c": [UIColor systemTealColor], @"i": @"globe.asia.australia.fill"},
+            @{@"t": @"Dịch giọng nói trực tiếp trong Google Dịch gốc", @"s": @"Chạm để mở micro dịch trực tiếp", @"c": [UIColor systemGreenColor], @"i": @"mic.fill"}
+        ];
+    } else if ([k containsString:@"line"] || [k containsString:@"zalo"] || [k containsString:@"telegram"] || [k containsString:@"messenger"]) {
+        self.omniInputField.placeholder = [NSString stringWithFormat:@"Nhắn tin nhanh trên %@...", app.name];
+        self.feedItems = @[
+            @{@"t": @"Nhóm Gia Đình (3 tin nhắn mới)", @"s": @"Khi nào về tới nhà nhắn nhé!", @"c": [UIColor systemGreenColor], @"i": @"message.fill"},
+            @{@"t": @"Cộng đồng CarPlay Việt Nam", @"s": @"Đã cập nhật SidePlay2 đa cửa sổ mới nhất", @"c": [UIColor systemBlueColor], @"i": @"bubble.left.and.bubble.right.fill"},
+            @{@"t": @"Cuộc gọi thoại rảnh tay trên xe", @"s": @"Chạm để mở danh bạ gọi nhanh", @"c": [UIColor systemTealColor], @"i": @"phone.fill"},
+            @{@"t": [NSString stringWithFormat:@"Mở hộp thư %@ gốc trên máy", app.name], @"s": @"Đồng bộ toàn bộ tin nhắn thời gian thực", @"c": [UIColor systemIndigoColor], @"i": @"arrow.up.right.square.fill"}
+        ];
+    } else {
+        self.omniInputField.placeholder = [NSString stringWithFormat:@"Tìm kiếm trong %@...", app.name];
+        self.feedItems = @[
+            @{@"t": [NSString stringWithFormat:@"%@ đang hoạt động trong Ô %ld", app.name, (long)self.paneNumber], @"s": app.bundleID, @"c": [UIColor systemBlueColor], @"i": @"app.badge.checkmark.fill"},
+            @{@"t": @"Chạy song song đa cửa sổ (Multi-Window)", @"s": @"Chạm để tương tác hoặc chuyển sang App Gốc", @"c": [UIColor systemGreenColor], @"i": @"rectangle.split.2x1.fill"},
+            @{@"t": @"Làm mới phiên hoạt động", @"s": @"Tải lại dữ liệu mới nhất", @"c": [UIColor systemOrangeColor], @"i": @"arrow.clockwise.circle.fill"},
+            @{@"t": [NSString stringWithFormat:@"Bung toàn màn hình ứng dụng %@", app.name], @"s": @"Khởi chạy trực tiếp qua SpringBoard", @"c": [UIColor systemPurpleColor], @"i": @"arrow.up.forward.app.fill"}
+        ];
+    }
+    [self.interactiveFeedTable reloadData];
+}
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    NSString *txt = textField.text;
+    if (txt.length > 0) {
+        NSMutableArray *updated = [NSMutableArray arrayWithObject:@{
+            @"t": [NSString stringWithFormat:@"Kết quả cho: \"%@\"", txt],
+            @"s": [NSString stringWithFormat:@"Đã xử lý trực tiếp trong %@ · Chạm để mở rộng", self.currentApp.name ?: @"App"],
+            @"c": [UIColor systemGreenColor],
+            @"i": @"checkmark.circle.fill"
+        }];
+        [updated addObjectsFromArray:self.feedItems];
+        self.feedItems = updated;
+        [self.interactiveFeedTable reloadData];
+    }
+    return YES;
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+    return self.feedItems.count;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"FeedCell"];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"FeedCell"];
+        cell.backgroundColor = [UIColor clearColor];
+        cell.textLabel.textColor = [UIColor whiteColor];
+        cell.textLabel.font = [UIFont boldSystemFontOfSize:11.5];
+        cell.textLabel.numberOfLines = 2;
+        cell.detailTextLabel.textColor = [UIColor lightGrayColor];
+        cell.detailTextLabel.font = [UIFont systemFontOfSize:10];
+    }
+    NSDictionary *item = self.feedItems[indexPath.row];
+    cell.textLabel.text = item[@"t"];
+    cell.detailTextLabel.text = item[@"s"];
+    cell.imageView.image = [UIImage systemImageNamed:item[@"i"]];
+    cell.imageView.tintColor = item[@"c"];
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (indexPath.row == self.feedItems.count - 1) {
+        [self onTapOpenNative];
+    } else {
+        NSDictionary *item = self.feedItems[indexPath.row];
+        self.omniInputField.text = item[@"t"];
     }
 }
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    [self.loadingSpinner stopAnimating];
-}
-
-- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
-    [self.loadingSpinner stopAnimating];
+    // Neu WKWebView tai xong noi dung that va khong bi trang trang thi hien thi len
+    [webView evaluateJavaScript:@"document.body.innerText.length" completionHandler:^(id result, NSError *error) {
+        if ([result respondsToSelector:@selector(integerValue)] && [result integerValue] > 20) {
+            self.interactiveWebView.hidden = NO;
+        }
+    }];
 }
 
 - (void)closeCurrentTab {
     self.currentApp = nil;
-    [self.interactiveWebView loadHTMLString:@"" baseURL:nil];
+    self.interactiveWebView.hidden = YES;
     self.runningContainerView.hidden = YES;
     self.tabStripContainer.hidden = YES;
     self.emptyStateView.hidden = NO;
@@ -595,7 +795,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     [row2 addArrangedSubview:[self modeButton:SidePlaySplitDual icon:@"plus"]];
 
     UILabel *qTitle = [[UILabel alloc] init];
-    qTitle.text = @"MỞ NHANH (YOUTUBE + BẢN ĐỒ)";
+    qTitle.text = @"MỞ NHANH (YOUTUBE + VIETMAP)";
     qTitle.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
     qTitle.textColor = [UIColor secondaryLabelColor];
     qTitle.translatesAutoresizingMaskIntoConstraints = NO;
@@ -605,7 +805,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     quickPill.layer.cornerRadius = 18;
     quickPill.layer.borderWidth = 1.2;
     quickPill.layer.borderColor = [UIColor systemBlueColor].CGColor;
-    [quickPill setTitle:@"  +   ⊞   ▶ YouTube + 🗺️ Maps  " forState:UIControlStateNormal];
+    [quickPill setTitle:@"  +   ⊞   ▶ YouTube + 🗺️ VIETMAP  " forState:UIControlStateNormal];
     quickPill.titleLabel.font = [UIFont boldSystemFontOfSize:13];
     quickPill.translatesAutoresizingMaskIntoConstraints = NO;
     [quickPill addTarget:self action:@selector(quickTap) forControlEvents:UIControlEventTouchUpInside];
@@ -649,7 +849,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         [quickPill.topAnchor constraintEqualToAnchor:qTitle.bottomAnchor constant:8],
         [quickPill.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
         [quickPill.heightAnchor constraintEqualToConstant:40],
-        [quickPill.widthAnchor constraintEqualToConstant:230],
+        [quickPill.widthAnchor constraintEqualToConstant:240],
 
         [exitBtn.topAnchor constraintEqualToAnchor:quickPill.bottomAnchor constant:16],
         [exitBtn.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
@@ -1061,7 +1261,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     self.speedCard.hidden = ![AppSettings shared].showSpeedBubble;
     self.speedCard.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Cho phep keo di chuyen bong bong toc do quanh man hinh
     UIPanGestureRecognizer *dragHud = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleSpeedCardDrag:)];
     [self.speedCard addGestureRecognizer:dragHud];
 
@@ -1240,7 +1439,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 
 @end
 
-#pragma mark - Tab 2: "Tren xe" (Tat ca cac dong deu hoat dong that khi cham vao)
+#pragma mark - Tab 2: "Tren xe"
 
 @interface CarSettingsViewController : UITableViewController
 @end
@@ -1256,12 +1455,8 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
-- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
-    return s == 0 ? @"CARPLAY" : @"TUỲ CHỈNH";
-}
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
-    return s == 0 ? 3 : 8;
-}
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return s == 0 ? @"CARPLAY" : @"TUỲ CHỈNH"; }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return s == 0 ? 3 : 8; }
 
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
@@ -1270,23 +1465,17 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     if (ip.section == 0) {
         if (ip.row == 0) {
             [self styleCell:cell icon:@"car.fill" color:[UIColor systemBlueColor] title:@"Mở khi kết nối CarPlay" detail:nil];
-            UISwitch *sw = [[UISwitch alloc] init];
-            sw.on = cfg.autoOpenCarPlay;
-            sw.tag = 100;
+            UISwitch *sw = [[UISwitch alloc] init]; sw.on = cfg.autoOpenCarPlay; sw.tag = 100;
             [sw addTarget:self action:@selector(onSwitchChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         } else if (ip.row == 1) {
             [self styleCell:cell icon:@"arrow.counterclockwise" color:[UIColor systemIndigoColor] title:@"Mở lại bố cục lần cuối" detail:nil];
-            UISwitch *sw = [[UISwitch alloc] init];
-            sw.on = cfg.restoreLastLayout;
-            sw.tag = 101;
+            UISwitch *sw = [[UISwitch alloc] init]; sw.on = cfg.restoreLastLayout; sw.tag = 101;
             [sw addTarget:self action:@selector(onSwitchChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         } else {
             [self styleCell:cell icon:@"power" color:[UIColor systemPurpleColor] title:@"Tự làm tối màn hình" detail:nil];
-            UISwitch *sw = [[UISwitch alloc] init];
-            sw.on = cfg.autoDimScreen;
-            sw.tag = 102;
+            UISwitch *sw = [[UISwitch alloc] init]; sw.on = cfg.autoDimScreen; sw.tag = 102;
             [sw addTarget:self action:@selector(onSwitchChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = sw;
         }
@@ -1302,7 +1491,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
             @[@"waveform", [UIColor systemPurpleColor], @"Trợ lí SideStaff", @"Đã mở khoá"],
             @[@"sparkles", [UIColor systemGreenColor], @"Đèn SideLed", @"Chưa kết nối"],
             @[@"macwindow", [UIColor systemGrayColor], @"Thanh tab ứng dụng", tabTime],
-            @[@"sparkles.rectangle.stack.fill", [UIColor systemBlueColor], @"Mở nhanh", @"YouTube + Maps"],
+            @[@"sparkles.rectangle.stack.fill", [UIColor systemBlueColor], @"Mở nhanh", @"YouTube + VIETMAP"],
             @[@"rectangle.split.2x1", [UIColor systemCyanColor], @"Màn hình trên xe", splitLabel],
             @[@"square.grid.2x2.fill", [UIColor systemIndigoColor], @"Ứng dụng", [NSString stringWithFormat:@"%lu app", (unsigned long)ScanDeviceApps().count]],
             @[@"wrench.and.screwdriver.fill", [UIColor systemGrayColor], @"Tuỳ chỉnh", @"Đầy đủ"]
@@ -1340,7 +1529,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 
     AppSettings *cfg = [AppSettings shared];
     if (ip.row == 0) {
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Bong bóng tốc độ" message:@"Tuỳ chỉnh hiển thị tốc độ GPS và biển báo giới hạn trên màn hình" preferredStyle:UIAlertControllerStyleActionSheet];
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Bong bóng tốc độ" message:@"Tuỳ chỉnh hiển thị tốc độ GPS và biển báo giới hạn" preferredStyle:UIAlertControllerStyleActionSheet];
         [ac addAction:[UIAlertAction actionWithTitle:(cfg.showSpeedBubble ? @"Ẩn bong bóng tốc độ" : @"Hiện bong bóng tốc độ") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             cfg.showSpeedBubble = !cfg.showSpeedBubble;
             [tv reloadData];
@@ -1368,7 +1557,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     } else if (ip.row == 4 || ip.row == 6) {
         self.tabBarController.selectedIndex = 2;
     } else if (ip.row == 5) {
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Màn hình trên xe mặc định" message:@"Chọn số ô chia màn hình khi khởi động" preferredStyle:UIAlertControllerStyleActionSheet];
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Màn hình trên xe mặc định" message:@"Chọn bố cục chia màn hình" preferredStyle:UIAlertControllerStyleActionSheet];
         NSArray *names = @[@"1 ô toàn màn hình", @"2 ô chia đôi dọc", @"3 ô chia dọc", @"4 ô chia dọc", @"Lưới 3 ô (1 Trái + 2 Phải)", @"Cửa sổ nổi PiP"];
         for (NSInteger i = 0; i < names.count; i++) {
             [ac addAction:[UIAlertAction actionWithTitle:names[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
@@ -1379,7 +1568,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         [ac addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     } else {
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Đã kích hoạt SidePro" message:@"Tính năng này đã được mở khoá sẵn trên bản XemYouTube 2.4.0 của bạn." preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"SidePlay2 2.5.0" message:@"Đã kích hoạt đầy đủ tính năng Tweak + Multi-Window." preferredStyle:UIAlertControllerStyleAlert];
         [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     }
@@ -1393,7 +1582,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @end
 
 @implementation AccountProViewController
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Tài khoản";
@@ -1401,7 +1589,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
     self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 90, 0);
 }
-
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 5; }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
     if (s == 0 || s == 1) return 1;
@@ -1409,31 +1596,30 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     return 2;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    return s == 4 ? @"SidePlay2 2.4.0 (Full Active)" : nil;
+    return s == 4 ? @"SidePlay2 2.5.0 (MobileSubstrate + Multi-Window)" : nil;
 }
-
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     if (ip.section == 0) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-        cell.textLabel.text = @"SidePro · Vĩnh viễn";
+        cell.textLabel.text = @"SidePro · SideMonth";
         cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
-        cell.detailTextLabel.text = @"Đã mở khoá toàn bộ tính năng Pro";
+        cell.detailTextLabel.text = @"Còn 29 ngày (Đã kích hoạt)";
         cell.detailTextLabel.textColor = [UIColor systemGreenColor];
-        cell.imageView.image = [UIImage systemImageNamed:@"checkmark.seal.fill"];
+        cell.imageView.image = [UIImage systemImageNamed:@"creditcard.fill"];
         cell.imageView.tintColor = [UIColor systemBlueColor];
         return cell;
     }
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
     if (ip.section == 1) {
-        cell.textLabel.text = @"Trạng thái bản quyền";
-        cell.detailTextLabel.text = @"Đã kích hoạt";
+        cell.textLabel.text = @"Mua SidePro";
+        cell.detailTextLabel.text = @"Đã mở khoá";
         cell.imageView.image = [UIImage systemImageNamed:@"creditcard.circle.fill"];
         cell.imageView.tintColor = [UIColor systemOrangeColor];
     } else if (ip.section == 2) {
         NSArray *items = @[
             @[@"circle.lefthalf.filled", [UIColor systemIndigoColor], @"Giao diện", @"Sáng"],
             @[@"globe", [UIColor systemBlueColor], @"Ngôn ngữ", @"Tiếng Việt"],
-            @[@"gauge.with.dots.needle.67percent", [UIColor systemGreenColor], @"Chế độ máy", @"Mượt (60fps)"]
+            @[@"gauge.with.dots.needle.67percent", [UIColor systemGreenColor], @"Chế độ máy", @"Mượt"]
         ];
         NSArray *r = items[ip.row];
         cell.imageView.image = [UIImage systemImageNamed:r[0]];
@@ -1463,7 +1649,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     }
     return cell;
 }
-
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
     if (ip.section == 4 && ip.row == 0) {
@@ -1473,12 +1658,8 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
     } else if (ip.section == 4 && ip.row == 1) {
         [[AppSettings shared] resetAll];
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"Đã đặt lại" message:@"Toàn bộ cài đặt đã trở về mặc định." preferredStyle:UIAlertControllerStyleAlert];
-        [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-        [self presentViewController:ac animated:YES completion:nil];
     }
 }
-
 @end
 
 #pragma mark - Tab 1: "Trang chu"
@@ -1496,9 +1677,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 90, 0);
     self.apps = ScanDeviceApps();
 }
-- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
-    return @"CHẠM VÀO ỨNG DỤNG ĐỂ MỞ TRONG Ô MÔ PHỎNG";
-}
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s { return @"CHẠM ĐỂ MỞ TRONG Ô MÔ PHỎNG"; }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.apps.count; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
@@ -1530,7 +1709,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @end
 
 @implementation FloatingPillTabBarController
-
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.tabBar.hidden = YES;
@@ -1616,9 +1794,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     ]];
 }
 
-- (void)onPillTabTap:(UIButton *)sender {
-    [self switchToTab:sender.tag];
-}
+- (void)onPillTabTap:(UIButton *)sender { [self switchToTab:sender.tag]; }
 
 - (void)switchToTab:(NSInteger)idx {
     self.selectedIndex = idx;
@@ -1654,7 +1830,6 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         }
     }
 }
-
 @end
 
 #pragma mark - CarPlay & Phone Scene Delegates

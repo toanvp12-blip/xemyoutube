@@ -2,13 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>application-identifier</key>
+    <string>com.xemyoutube</string>
     <key>platform-application</key>
     <true/>
     <key>com.apple.private.security.container-required</key>
     <false/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
     <key>com.apple.springboard.launchapplications</key>
     <true/>
     <key>com.apple.frontboard.launchapplications</key>
+    <true/>
+    <key>com.apple.frontboard.scenemanager</key>
     <true/>
     <key>com.apple.backboardd.launchapplications</key>
     <true/>
