@@ -2,26 +2,14 @@
 set -e
 
 sudo apt-get update
-sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6 libncurses-dev libxml2
+sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6 libncurses-dev libxml2 sudo python3
 
+# Cai dat Theos, iOS Toolchain (Swift/Clang) va iOS SDK bang trinh cai dat chinh thuc
 export THEOS=/opt/theos
-sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
-
-# Tai iOS Toolchain (ho tro bien dich Swift & Clang cho iOS ARM64 tren Linux)
-sudo mkdir -p $THEOS/toolchain/linux/iphone
-curl -fsSL "https://github.com/sbingner/llvm-project/releases/latest/download/linux-arm64-toolchain.tar.lzma" -o toolchain.tar.lzma
-sudo tar --lzma -xf toolchain.tar.lzma -C $THEOS/toolchain/linux/iphone --strip-components=1
-rm -f toolchain.tar.lzma
-
-# Tai iOS SDK
-curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
-unzip -q sdks.zip
-sudo mv sdks-master/*.sdk $THEOS/sdks/
-rm -rf sdks.zip sdks-master
-
-# Cai dat ldid de ky ma ung dung iOS
-sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
-sudo chmod +x /usr/local/bin/ldid
+export NONINTERACTIVE=1
+sudo mkdir -p $THEOS
+sudo chown -R $(whoami) $THEOS
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
 
 cd src
 chmod +x layout/DEBIAN/postinst
