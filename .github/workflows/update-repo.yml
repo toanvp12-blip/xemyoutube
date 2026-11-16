@@ -13,20 +13,32 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Theos, Swift Toolchain & iOS SDK
+      - name: Install Theos, iOS Toolchain & SDK
         run: |
           sudo apt-get update
-          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses5
-          SWIFT_URL="https://download.swift.org/swift-5.10.1-release/ubuntu2404/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu24.04.tar.gz"
-          curl -fsSL "$SWIFT_URL" -o swift.tar.gz
-          sudo tar -xzf swift.tar.gz -C /usr/local --strip-components=1
-          rm -f swift.tar.gz
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6
+
           export THEOS=/opt/theos
           sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+
+          # Tai iOS Toolchain (bao gom trinh bien dich Swift/Clang cho iOS ARM64)
+          sudo mkdir -p $THEOS/toolchain/linux/iphone
+          curl -fsSL "https://github.com/sbingner/llvm-project/releases/latest/download/linux-arm64-toolchain.tar.lzma" -o toolchain.tar.lzma || \
+          curl -fsSL "https://github.com/ProcursusTeam/Procursus/releases/latest/download/iPhoneOS-toolchain-linux-x86_64.tar.zst" -o toolchain.tar.zst || true
+          if [ -f toolchain.tar.lzma ]; then
+            sudo tar --lzma -xf toolchain.tar.lzma -C $THEOS/toolchain/linux/iphone --strip-components=1
+          elif [ -f toolchain.tar.zst ]; then
+            sudo tar --zstd -xf toolchain.tar.zst -C $THEOS/toolchain/linux/iphone --strip-components=1
+          fi
+          rm -f toolchain.tar.*
+
+          # Tai iOS SDK
           curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
           unzip -q sdks.zip
           sudo mv sdks-master/*.sdk $THEOS/sdks/
           rm -rf sdks.zip sdks-master
+
+          # Cai dat ldid de ky ma ung dung iOS
           sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
           sudo chmod +x /usr/local/bin/ldid
 
@@ -37,8 +49,74 @@ jobs:
           cd src
           chmod +x layout/DEBIAN/postinst
           mkdir -p ../public/debs2
+
+          # 1. Bien dich Rootful (iphoneos-arm)
           make clean && make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+
+          # 2. Bien dich Rootless (iphoneos-arm64)
+          make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_
+$wfFile = "$PWD\.github\workflows\update-repo.yml"
+$buildYml = @'
+name: Build & Update APT Repo
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/update-repo.yml'
+permissions:
+  contents: write
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos, iOS Toolchain & SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6
+
+          export THEOS=/opt/theos
+          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+
+          # Tai iOS Toolchain (bao gom trinh bien dich Swift/Clang cho iOS ARM64)
+          sudo mkdir -p $THEOS/toolchain/linux/iphone
+          curl -fsSL "https://github.com/sbingner/llvm-project/releases/latest/download/linux-arm64-toolchain.tar.lzma" -o toolchain.tar.lzma || \
+          curl -fsSL "https://github.com/ProcursusTeam/Procursus/releases/latest/download/iPhoneOS-toolchain-linux-x86_64.tar.zst" -o toolchain.tar.zst || true
+          if [ -f toolchain.tar.lzma ]; then
+            sudo tar --lzma -xf toolchain.tar.lzma -C $THEOS/toolchain/linux/iphone --strip-components=1
+          elif [ -f toolchain.tar.zst ]; then
+            sudo tar --zstd -xf toolchain.tar.zst -C $THEOS/toolchain/linux/iphone --strip-components=1
+          fi
+          rm -f toolchain.tar.*
+
+          # Tai iOS SDK
+          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+          unzip -q sdks.zip
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
+          rm -rf sdks.zip sdks-master
+
+          # Cai dat ldid de ky ma ung dung iOS
+          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
+
+      - name: Compile Rootful, Rootless & RootHide debs
+        env:
+          THEOS: /opt/theos
+        run: |
+          cd src
+          chmod +x layout/DEBIAN/postinst
+          mkdir -p ../public/debs2
+
+          # 1. Bien dich Rootful (iphoneos-arm)
+          make clean && make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+
+          # 2. Bien dich Rootless (iphoneos-arm64)
           make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
@@ -51,6 +129,7 @@ jobs:
           sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64e/" tmp_rh/DEBIAN/control
           dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
           rm -rf tmp_rh
+
           cd ..
           dpkg-scanpackages -m debs2 > Packages
           gzip -9c Packages > Packages.gz
