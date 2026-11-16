@@ -3,6 +3,10 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
+@interface NSDistributedNotificationCenter : NSNotificationCenter
++ (instancetype)defaultCenter;
+@end
+
 // Tweak nap vao SpringBoard de giu cac ung dung duoc chon chay song song foreground
 __attribute__((constructor))
 static void XemYouTubeSpringBoardInit(void) {
@@ -17,7 +21,7 @@ static void XemYouTubeSpringBoardInit(void) {
         if (!targetBundle) return;
         Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
         if (wsClass) {
-            id ws = [wsClass performSelector:@selector(defaultWorkspace)];
+            id ws = ((id (*)(id, SEL))objc_msgSend)(wsClass, NSSelectorFromString(@"defaultWorkspace"));
             SEL openSel = NSSelectorFromString(@"openApplicationWithBundleID:");
             if ([ws respondsToSelector:openSel]) {
                 ((BOOL (*)(id, SEL, id))objc_msgSend)(ws, openSel, targetBundle);
