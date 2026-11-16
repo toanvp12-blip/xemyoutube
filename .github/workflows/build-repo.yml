@@ -1,0 +1,59 @@
+﻿name: Build APT Repository
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'public/debs2/**'
+      - '.github/workflows/build-repo.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dpkg-dev & bzip2
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev bzip2 gzip
+
+      - name: Generate Dummy Debs & Build Packages Index
+        working-directory: ./public
+        run: |
+          if [ -z "$(ls -A debs2/*.deb 2>/dev/null)" ]; then
+            for arch in iphoneos-arm iphoneos-arm64 iphoneos-arm64e; do
+              mkdir -p /tmp/pkg_${arch}/DEBIAN
+              cat <<EOF > /tmp/pkg_${arch}/DEBIAN/control
+          Package: com.xemyoutube
+          Name: XemYouTube
+          Description: Tweak xem YouTube va da nhiem danh cho CarPlay
+          Depends: firmware (>= 15.0), mobilesubstrate, preferenceloader
+          Conflicts: com.sideplay2, com.sideplay2.beta, com.sideplay, com.cortex.carplayenable, com.pavunato.carsurf
+          Maintainer: XemYouTube
+          Author: XemYouTube
+          Section: Tweaks
+          Icon: https://xemyoutube.pages.dev/xemyoutube.png
+          Architecture: ${arch}
+          Version: 2.1.1
+          Installed-Size: 10500
+          Tag: cydia::commercial
+          SileoDepiction: https://xemyoutube.pages.dev/api/sp2/depiction
+          EOF
+              dpkg-deb --build /tmp/pkg_${arch} "debs2/com.xemyoutube_2.1.1_${arch}.deb"
+            done
+          fi
+
+          dpkg-scanpackages -m debs2 /dev/null > Packages
+          gzip -c9 Packages > Packages.gz
+          bzip2 -c9 Packages > Packages.bz2
+
+      - name: Commit & Push updated Packages index
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add public/Packages public/Packages.gz public/Packages.bz2
+          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: auto-update APT Packages index" && git push)

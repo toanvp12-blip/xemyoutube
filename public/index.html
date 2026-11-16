@@ -1,0 +1,114 @@
+﻿<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>XemYouTube — Đa nhiệm CarPlay</title>
+  <link rel="icon" href="favicon.ico" sizes="any" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="top-controls">
+    <button id="langToggle" class="pill-btn" aria-label="Switch language">🇻🇳 VI / 🇺🇸 EN</button>
+    <div id="themeSlider" class="theme-toggle" role="slider" aria-label="Light / dark" tabindex="0">
+      <span class="theme-label">☀️ / 🌙</span>
+    </div>
+  </div>
+
+  <header class="hero">
+    <div class="app-icon-wrap">
+      <img src="xemyoutube.png" alt="XemYouTube Icon" width="128" height="128" class="app-icon" />
+    </div>
+    <h1>XemYouTube</h1>
+    <p class="subtitle" data-vi="Đa nhiệm chia đôi màn hình & Bong bóng tốc độ cho CarPlay" data-en="Multi-app split screen & Speed bubble for CarPlay">
+      Đa nhiệm chia đôi màn hình & Bong bóng tốc độ cho CarPlay
+    </p>
+
+    <nav class="repo-buttons">
+      <a id="sileoBtn" href="sileo://source/https://xemyoutube.pages.dev/" class="btn btn-sileo">Sileo</a>
+      <a id="zebraBtn" href="zbra://sources/add/https://xemyoutube.pages.dev/" class="btn btn-zebra">Zebra</a>
+    </nav>
+  </header>
+
+  <section class="section">
+    <h2 data-vi="Xem trước" data-en="Preview">Xem trước</h2>
+    <div class="shots-carousel">
+      <figure class="shot-card">
+        <img class="shot-img" data-shot="1-nhieu-app" src="shots/1-nhieu-app-dark.jpg" alt="Nhiều app trên một màn hình xe" loading="lazy" />
+        <figcaption data-vi="Nhiều app trên một màn hình xe" data-en="Many apps on one car screen">Nhiều app trên một màn hình xe</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img class="shot-img" data-shot="2-bong-bong" src="shots/2-bong-bong-dark.jpg" alt="Bong bóng tốc độ và biển báo" loading="lazy" />
+        <figcaption data-vi="Bong bóng tốc độ và biển báo" data-en="The speed bubble and road signs">Bong bóng tốc độ và biển báo</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img class="shot-img" data-shot="3-tin-nhan" src="shots/3-tin-nhan-dark.jpg" alt="Tin nhắn hiện ngay trên xe" loading="lazy" />
+        <figcaption data-vi="Tin nhắn hiện ngay trên xe" data-en="Messages shown on the car screen">Tin nhắn hiện ngay trên xe</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img class="shot-img" data-shot="4-mo-tren-xe" src="shots/4-mo-tren-xe-dark.jpg" alt="Mở trên xe chỉ với một chạm" loading="lazy" />
+        <figcaption data-vi="Mở trên xe chỉ với một chạm" data-en="Open in the car with a single tap">Mở trên xe chỉ với một chạm</figcaption>
+      </figure>
+      <figure class="shot-card">
+        <img class="shot-img" data-shot="5-giao-dien" src="shots/5-giao-dien-dark.jpg" alt="Các kiểu bong bóng" loading="lazy" />
+        <figcaption data-vi="Các kiểu bong bóng" data-en="The bubble styles">Các kiểu bong bóng</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2 data-vi="Dùng thử ngay (Kéo thanh chia màn hình)" data-en="Try it now (Drag the split bar)">Dùng thử ngay (Kéo thanh chia màn hình)</h2>
+    <div class="carplay-frame">
+      <aside class="carplay-dock">
+        <b class="cp-time">9:41</b>
+        <div class="cp-signal"><i></i><i></i><i></i><i></i></div>
+        <img src="xemyoutube.png" alt="XemYouTube" class="cp-dock-icon" />
+        <div class="cp-home-indicator"></div>
+      </aside>
+
+      <div class="carplay-workspace" id="cpWorkspace">
+        <div class="cp-pane cp-left" id="leftPane" style="width: 55%;">
+          <div class="cp-app-header"><span>🗺️ Google Maps</span></div>
+          <div class="cp-map-mock">
+            <div class="speed-bubble-mock">
+              <span class="limit-sign">60</span>
+              <span class="current-speed">54 <small>km/h</small></span>
+            </div>
+            <p data-vi="Bản đồ dẫn đường trực tiếp" data-en="Live Navigation Map">Bản đồ dẫn đường trực tiếp</p>
+          </div>
+        </div>
+
+        <div class="cp-separator" id="splitSeparator" role="separator" aria-orientation="vertical" aria-label="Chia màn hình">
+          <div class="handle-dots"><i></i><i></i><i></i></div>
+        </div>
+
+        <div class="cp-pane cp-right" id="rightPane" style="width: 45%;">
+          <div class="cp-app-header"><span>▶️ YouTube</span></div>
+          <div class="cp-yt-mock">
+            <div class="video-box">▶ Lofi Chill Car Music 2026</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section trial-section">
+    <h2 data-vi="Nhập mã" data-en="Enter code">Nhập mã</h2>
+    <p data-vi="để dùng thử 30 ngày miễn phí" data-en="for a 30-day free trial">để dùng thử 30 ngày miễn phí</p>
+
+    <form id="trialForm" class="trial-form">
+      <input type="text" id="trialCode" placeholder="XYT-XXXX-YYYY" required maxlength="20" />
+      <button type="submit" class="btn btn-primary" data-vi="Kích hoạt" data-en="Activate">Kích hoạt</button>
+    </form>
+    <p id="trialMessage" class="trial-msg"></p>
+
+    <footer class="footer-links">
+      <a id="sileoFooter" href="sileo://source/https://xemyoutube.pages.dev/">Sileo</a>
+      <span>•</span>
+      <a id="zebraFooter" href="zbra://sources/add/https://xemyoutube.pages.dev/">Zebra</a>
+    </footer>
+  </section>
+
+  <script src="main.js"></script>
+</body>
+</html>
