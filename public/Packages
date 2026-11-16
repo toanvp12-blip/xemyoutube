@@ -1,48 +1,48 @@
 Package: com.xemyoutube
-Version: 2.5.2
-Architecture: iphoneos-arm64e
-Maintainer: XemYouTube
-Installed-Size: 480
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.5.2_iphoneos-arm64e.deb
-Size: 80932
-MD5sum: dbaa2d040dba28ab08892eafeb826697
-SHA1: e399a7b08011a02d8b4e2256d2c0aed333e7763e
-SHA256: 28cfae026836ed90e8772da151c43312773f3d3c6f37d6e539149d17f5a24682
-Section: Tweaks
-Description: Ung dung da cua so CarPlay chay song song App Goc (Khong gay Safe Mode)
-Author: XemYouTube
-Name: XemYouTube (SidePlay2 Full)
-
-Package: com.xemyoutube
-Version: 2.5.2
-Architecture: iphoneos-arm64
-Maintainer: XemYouTube
-Installed-Size: 480
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.5.2_iphoneos-arm64.deb
-Size: 80928
-MD5sum: fb9388a5bbe8ab01c9682e0eb73891d8
-SHA1: 64d6a2f3ff0c244f4ad8179cf597549dabf60d43
-SHA256: e2d995bb1a90a4a48e624e328365cc2c202e86bb88c70038a740193edc4cfbc6
-Section: Tweaks
-Description: Ung dung da cua so CarPlay chay song song App Goc (Khong gay Safe Mode)
-Author: XemYouTube
-Name: XemYouTube (SidePlay2 Full)
-
-Package: com.xemyoutube
-Version: 2.5.2
+Version: 2.6.0
 Architecture: iphoneos-arm
 Maintainer: XemYouTube
 Installed-Size: 480
-Depends: firmware (>= 15.0)
-Filename: debs2/com.xemyoutube_2.5.2_iphoneos-arm.deb
-Size: 80856
-MD5sum: 99a0def98da35bb45f45b2e297d073c7
-SHA1: 7d562d5c6707df88c9c2f5b96ee5c0fa0e0935cc
-SHA256: cb9d7841ccac2ee0a59773f3202e80c3e1d5cb5bab0f59d2a280daf355fc934e
+Depends: firmware (>= 15.0), mobilesubstrate
+Filename: debs2/com.xemyoutube_2.6.0_iphoneos-arm.deb
+Size: 81968
+MD5sum: ce1c9b0f23d62c8d3bccb35b4a9a9672
+SHA1: 19b7598e2fa8b92d31d81b86976dd9607574cd70
+SHA256: fdf4e0aff53f0b0f6a401881298a72617cae8988de48bdf2290589efa7756c03
 Section: Tweaks
-Description: Ung dung da cua so CarPlay chay song song App Goc (Khong gay Safe Mode)
+Description: Chay truc tiep App Goc (YouTube, VIETMAP, Zalo...) song song da cua so nhu SidePlay2
 Author: XemYouTube
-Name: XemYouTube (SidePlay2 Full)
+Name: XemYouTube (SidePlay2 Live App)
+
+Package: com.xemyoutube
+Version: 2.6.0
+Architecture: iphoneos-arm64e
+Maintainer: XemYouTube
+Installed-Size: 480
+Depends: firmware (>= 15.0), mobilesubstrate
+Filename: debs2/com.xemyoutube_2.6.0_iphoneos-arm64e.deb
+Size: 82080
+MD5sum: f63827a297b5deff00b643527d2c50e0
+SHA1: 9905a3b532646a1754cc3885479194dd791e941b
+SHA256: 874f67d641ab568f0a9e12f5b0bb8c0f1a1da36e69438cad80d8d97a9abe8bf2
+Section: Tweaks
+Description: Chay truc tiep App Goc (YouTube, VIETMAP, Zalo...) song song da cua so nhu SidePlay2
+Author: XemYouTube
+Name: XemYouTube (SidePlay2 Live App)
+
+Package: com.xemyoutube
+Version: 2.6.0
+Architecture: iphoneos-arm64
+Maintainer: XemYouTube
+Installed-Size: 480
+Depends: firmware (>= 15.0), mobilesubstrate
+Filename: debs2/com.xemyoutube_2.6.0_iphoneos-arm64.deb
+Size: 82080
+MD5sum: 8157e18c2c5fa49b106e20e795734321
+SHA1: 8ab4ea75aceec399e3dfb1455b44c4f5d02ce34c
+SHA256: ff5e22b02f10a5ead812353a2477d03a9c0f5787d053e354010341c104dc481d
+Section: Tweaks
+Description: Chay truc tiep App Goc (YouTube, VIETMAP, Zalo...) song song da cua so nhu SidePlay2
+Author: XemYouTube
+Name: XemYouTube (SidePlay2 Live App)
 
