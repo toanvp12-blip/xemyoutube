@@ -4,30 +4,21 @@ set -e
 sudo apt-get update
 sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses6 libncurses-dev libxml2 sudo python3
 
-# 1. Tai san iOS SDK vao thu muc tam
-curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o /tmp/sdks.zip
-unzip -q /tmp/sdks.zip -d /tmp
-
-# 2. Chay install-theos (se cai Theos + Toolchain, va khi bao loi SDK o buoc cuoi thi bo qua vi ta da tai san)
+# Cai dat tron bo Theos + Toolchain + iOS SDK
 export THEOS=/opt/theos
 export NONINTERACTIVE=1
 sudo rm -rf $THEOS
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)" || true
-
-# 3. Chep cac tep .sdk da tai san vao $THEOS/sdks/
-sudo mkdir -p $THEOS/sdks
-sudo mv /tmp/sdks-master/*.sdk $THEOS/sdks/
-rm -rf /tmp/sdks.zip /tmp/sdks-master
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
 
 cd src
 chmod +x layout/DEBIAN/postinst
 mkdir -p ../public/debs2
 
-# 4. Bien dich Rootful (iphoneos-arm)
+# 1. Bien dich Rootful (iphoneos-arm)
 make clean && make package FINALPACKAGE=1
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
 
-# 5. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
+# 2. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
 make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
 cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
