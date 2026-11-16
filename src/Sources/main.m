@@ -526,13 +526,38 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
 }
 
 - (BOOL)tryAttachLiveFrontBoardScene:(NSString *)bundleID {
+    dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_LAZY);
+    dlopen("/System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard", RTLD_LAZY);
+
+    // 1. Khoi chay ngam App Goc qua FBSOpenApplicationService de tao FBScene neu app chua mo
+    Class svcCls = NSClassFromString(@"FBSOpenApplicationService");
+    Class optCls = NSClassFromString(@"FBSOpenApplicationOptions");
+    if (svcCls && optCls && [svcCls respondsToSelector:@selector(serviceWithDefaultShellEndpoint)]) {
+        id svc = [svcCls performSelector:@selector(serviceWithDefaultShellEndpoint)];
+        id opts = ((id (*)(id, SEL, id))objc_msgSend)(optCls, NSSelectorFromString(@"optionsWithDictionary:"), @{ @"__ActivateSuspended" : @YES });
+        SEL openSel = NSSelectorFromString(@"openApplication:withOptions:completion:");
+        if ([svc respondsToSelector:openSel]) {
+            ((void (*)(id, SEL, id, id, id))objc_msgSend)(svc, openSel, bundleID, opts, nil);
+        }
+    }
+
+    // 2. Neu FBScene da san sang, nhung truc tiep UIScenePresentationView vao khung o
     Class fbMgrClass = NSClassFromString(@"FBSceneManager");
     if (fbMgrClass && [fbMgrClass respondsToSelector:@selector(sharedInstance)]) {
         id mgr = [fbMgrClass sharedInstance];
         if ([mgr respondsToSelector:@selector(scenes)]) {
             for (id scene in [mgr scenes]) {
                 NSString *sid = [scene valueForKey:@"identifier"];
-                if ([sid containsString:bundleID]) {
+                if (sid && [sid containsString:bundleID]) {
+                    CGRect box = self.runningContainerView.bounds.size.width > 20 ? self.runningContainerView.bounds : CGRectMake(0, 0, 180, 360);
+                    CGFloat scale = box.size.width / 375.0;
+                    CGRect phoneRect = CGRectMake(0, 0, 375.0, MAX(box.size.height / MAX(scale, 0.35), 600.0));
+                    if ([scene respondsToSelector:@selector(updateSettingsWithBlock:)]) {
+                        [scene updateSettingsWithBlock:^(id mutableSettings) {
+                            if ([mutableSettings respondsToSelector:@selector(setForeground:)]) [mutableSettings setForeground:YES];
+                            if ([mutableSettings respondsToSelector:@selector(setFrame:)]) [mutableSettings setFrame:phoneRect];
+                        }];
+                    }
                     id presMgr = [scene uiPresentationManager];
                     if ([presMgr respondsToSelector:@selector(createPresenterWithIdentifier:)]) {
                         id presenter = [presMgr createPresenterWithIdentifier:[NSString stringWithFormat:@"SP2-%ld", (long)self.paneNumber]];
@@ -540,8 +565,9 @@ static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
                             [presenter activate];
                             UIView *v = [presenter presentationView];
                             if (v) {
-                                v.frame = self.runningContainerView.bounds;
-                                v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+                                v.bounds = phoneRect;
+                                v.center = CGPointMake(box.size.width / 2.0, box.size.height / 2.0);
+                                v.transform = CGAffineTransformMakeScale(scale, scale);
                                 [self.runningContainerView addSubview:v];
                                 return YES;
                             }
@@ -1568,7 +1594,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         [ac addAction:[UIAlertAction actionWithTitle:@"Đóng" style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     } else {
-        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"SidePlay2 2.5.2" message:@"Đã kích hoạt đầy đủ tính năng Tweak + Multi-Window." preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *ac = [UIAlertController alertControllerWithTitle:@"SidePlay2 2.6.0" message:@"Đã kích hoạt đầy đủ tính năng Tweak + Multi-Window." preferredStyle:UIAlertControllerStyleAlert];
         [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
         [self presentViewController:ac animated:YES completion:nil];
     }
@@ -1596,7 +1622,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
     return 2;
 }
 - (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
-    return s == 4 ? @"SidePlay2 2.5.2 (MobileSubstrate + Multi-Window)" : nil;
+    return s == 4 ? @"SidePlay2 2.6.0 (MobileSubstrate + Multi-Window)" : nil;
 }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     if (ip.section == 0) {

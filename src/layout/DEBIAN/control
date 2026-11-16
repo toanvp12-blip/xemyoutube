@@ -1,9 +1,9 @@
 Package: com.xemyoutube
-Name: XemYouTube (SidePlay2 Full)
-Version: 2.5.2
+Name: XemYouTube (SidePlay2 Live App)
+Version: 2.6.0
 Architecture: iphoneos-arm
-Description: Ung dung da cua so CarPlay chay song song App Goc (Khong gay Safe Mode)
+Description: Chay truc tiep App Goc (YouTube, VIETMAP, Zalo...) song song da cua so nhu SidePlay2
 Maintainer: XemYouTube
 Author: XemYouTube
 Section: Tweaks
-Depends: firmware (>= 15.0)
+Depends: firmware (>= 15.0), mobilesubstrate

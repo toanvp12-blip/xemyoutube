@@ -23,23 +23,23 @@ mkdir -p ../public/debs2
 
 # 1. Bien dich Rootful (iphoneos-arm)
 rm -rf packages .theos && make clean && make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.5.2_iphoneos-arm.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.6.0_iphoneos-arm.deb
 
 # 2. Bien dich Rootless (iphoneos-arm64) & RootHide (iphoneos-arm64e)
 rm -rf packages .theos && make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.5.2_iphoneos-arm64.deb
-cp packages/*.deb ../public/debs2/com.xemyoutube_2.5.2_iphoneos-arm64e.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.6.0_iphoneos-arm64.deb
+cp packages/*.deb ../public/debs2/com.xemyoutube_2.6.0_iphoneos-arm64e.deb
 
 cd ../public/debs2
 
-# Dam bao postinst va Version 2.5.2 chuan xac trong tung goi .deb
+# Dam bao postinst va Version 2.6.0 chuan xac trong tung goi .deb
 for arch in iphoneos-arm iphoneos-arm64 iphoneos-arm64e; do
-    deb="com.xemyoutube_2.5.2_${arch}.deb"
+    deb="com.xemyoutube_2.6.0_${arch}.deb"
     rm -rf tmp_edit
     mkdir -p tmp_edit
     dpkg-deb -R "$deb" tmp_edit
     sed -i "s/^Architecture.*/Architecture: ${arch}/" tmp_edit/DEBIAN/control
-    sed -i "s/^Version.*/Version: 2.5.2/" tmp_edit/DEBIAN/control
+    sed -i "s/^Version.*/Version: 2.6.0/" tmp_edit/DEBIAN/control
     cp ../../src/layout/DEBIAN/postinst tmp_edit/DEBIAN/postinst
     chmod 0755 tmp_edit/DEBIAN/postinst
     dpkg-deb -Zxz -b tmp_edit "$deb"
@@ -55,7 +55,7 @@ cat <<EOF > Release
 Origin: XemYouTube
 Label: XemYouTube
 Suite: stable
-Version: 2.5.2
+Version: 2.6.0
 Codename: ios
 Architectures: iphoneos-arm iphoneos-arm64 iphoneos-arm64e
 Components: main
