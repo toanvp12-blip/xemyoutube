@@ -13,6 +13,7 @@ XemYouTube_CODESIGN_FLAGS = -Sentitlements.plist
 include $(THEOS_MAKE_PATH)/application.mk
 # Experimental SpringBoard host, delivered only as a test artifact.
 TWEAK_NAME = XemYouTubeSB
+XemYouTubeSB_ARCHS = arm64e
 XemYouTubeSB_FILES = Sources/Tweak.m
 XemYouTubeSB_FRAMEWORKS = UIKit Foundation CoreLocation QuartzCore CoreGraphics
 XemYouTubeSB_CFLAGS = -fobjc-arc
