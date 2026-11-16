@@ -16,6 +16,11 @@
     <true/>
     <key>com.apple.backboardd.launchapplications</key>
     <true/>
+    <key>com.apple.security.exception.mach-lookup.global-name</key>
+    <array>
+        <string>com.apple.frontboard.systemappservices</string>
+        <string>com.apple.frontboard.workspace</string>
+    </array>
     <key>com.apple.developer.carplay-maps</key>
     <true/>
     <key>com.apple.developer.carplay-audio</key>

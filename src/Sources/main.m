@@ -5,8 +5,11 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <dlfcn.h>
+#import <spawn.h>
 
-#pragma mark - Private APIs (LSApplicationWorkspace + FrontBoard Scene Hosting)
+extern char **environ;
+
+#pragma mark - Private APIs (LSApplicationWorkspace + FrontBoard / BackBoard Live Scene Hosting)
 
 @interface LSApplicationProxy : NSObject
 @property (nonatomic, readonly) NSString *applicationIdentifier;
@@ -24,22 +27,35 @@
 + (UIImage *)_applicationIconImageForBundleIdentifier:(NSString *)bundleIdentifier format:(int)format scale:(CGFloat)scale;
 @end
 
-// FrontBoard Scene Hosting interfaces (nhung truc tiep giao dien ung dung that vao o cua so)
+@interface FBSOpenApplicationOptions : NSObject
++ (instancetype)optionsWithDictionary:(NSDictionary *)dict;
+@end
+
+@interface FBSOpenApplicationService : NSObject
++ (instancetype)dashboardService;
++ (instancetype)serviceWithDefaultShellEndpoint;
+- (void)openApplication:(NSString *)bundleID withOptions:(id)options completion:(void (^)(id process, NSError *error))completion;
+@end
+
 @interface FBSceneManager : NSObject
 + (instancetype)sharedInstance;
 - (NSSet *)scenes;
-- (id)sceneWithIdentifier:(NSString *)identifier;
 @end
 
 @interface FBScene : NSObject
 @property (nonatomic, readonly, copy) NSString *identifier;
 - (id)uiPresentationManager;
-- (id)settings;
-- (void)updateSettingsWithBlock:(void (^)(id settings))block;
+- (void)updateSettingsWithBlock:(void (^)(id mutableSettings))block;
+@end
+
+@interface FBSMutableSceneSettings : NSObject
+- (void)setFrame:(CGRect)frame;
+- (void)setForeground:(BOOL)fg;
+- (void)setInterfaceOrientation:(UIInterfaceOrientation)orientation;
 @end
 
 @interface UIScenePresentationManager : NSObject
-- (UIView *)createPresenterWithIdentifier:(NSString *)identifier;
+- (id)createPresenterWithIdentifier:(NSString *)identifier;
 @end
 
 @interface UIScenePresenter : NSObject
@@ -49,39 +65,43 @@
 - (void)invalidate;
 @end
 
-#pragma mark - App Model & Quet App Tren May
+#pragma mark - App Model & Quet Danh Sach Ung Dung That Tren May
 
 @interface InstalledAppItem : NSObject
 @property (nonatomic, copy) NSString *bundleID;
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, strong) UIImage *icon;
-@property (nonatomic, copy) NSString *fallbackURL;
+@property (nonatomic, copy) NSString *webMirrorURL;
 @end
 
 @implementation InstalledAppItem
 @end
 
-static NSString *FallbackURLForApp(NSString *bundleID, NSString *name) {
-    NSString *key = [NSString stringWithFormat:@"%@ %@", bundleID.lowercaseString, name.lowercaseString];
-    if ([key containsString:@"youtube"]) return @"https://m.youtube.com";
-    if ([key containsString:@"vietmap"]) return @"https://maps.vietmap.vn";
-    if ([key containsString:@"maps"] || [key containsString:@"google"]) return @"https://www.google.com/maps";
-    if ([key containsString:@"zing"]) return @"https://zingmp3.vn";
-    if ([key containsString:@"spotify"]) return @"https://open.spotify.com";
-    if ([key containsString:@"tiktok"]) return @"https://www.tiktok.com";
-    if ([key containsString:@"zalo"]) return @"https://chat.zalo.me";
-    if ([key containsString:@"telegram"]) return @"https://web.telegram.org";
-    if ([key containsString:@"vtv"]) return @"https://vtvgo.vn";
-    return @"https://www.google.com";
+static NSString *MirrorURLForApp(NSString *bundleID, NSString *name) {
+    NSString *k = [NSString stringWithFormat:@"%@ %@", bundleID.lowercaseString, name.lowercaseString];
+    if ([k containsString:@"youtube"]) return @"https://m.youtube.com";
+    if ([k containsString:@"vietmap"]) return @"https://maps.vietmap.vn";
+    if ([k containsString:@"maps"] || [k containsString:@"google.maps"]) return @"https://www.google.com/maps";
+    if ([k containsString:@"translate"] || [k containsString:@"dich"]) return @"https://translate.google.com";
+    if ([k containsString:@"gmail"] || [k containsString:@"mail"]) return @"https://mail.google.com";
+    if ([k containsString:@"zing"]) return @"https://zingmp3.vn";
+    if ([k containsString:@"spotify"] || [k containsString:@"music"] || [k containsString:@"nhac"]) return @"https://open.spotify.com";
+    if ([k containsString:@"tiktok"]) return @"https://www.tiktok.com";
+    if ([k containsString:@"zalo"]) return @"https://chat.zalo.me";
+    if ([k containsString:@"telegram"]) return @"https://web.telegram.org";
+    if ([k containsString:@"messenger"] || [k containsString:@"facebook"]) return @"https://m.facebook.com";
+    if ([k containsString:@"weather"] || [k containsString:@"thoi tiet"]) return @"https://www.windy.com";
+    if ([k containsString:@"shopee"]) return @"https://shopee.vn";
+    return [NSString stringWithFormat:@"https://www.google.com/search?q=%@", [name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]];
 }
 
-static NSArray<InstalledAppItem *> *GetInstalledApps(void) {
+static NSArray<InstalledAppItem *> *ScanDeviceApps(void) {
     NSMutableArray<InstalledAppItem *> *list = [NSMutableArray array];
     Class wsClass = NSClassFromString(@"LSApplicationWorkspace");
     if (wsClass) {
         id ws = [wsClass defaultWorkspace];
         NSArray *all = [ws allInstalledApplications];
-        NSSet *sysKeep = [NSSet setWithArray:@[
+        NSSet *sysAllow = [NSSet setWithArray:@[
             @"com.apple.Maps", @"com.apple.Music", @"com.apple.mobilesafari",
             @"com.apple.weather", @"com.apple.podcasts", @"com.apple.mobilemail"
         ]];
@@ -90,13 +110,12 @@ static NSArray<InstalledAppItem *> *GetInstalledApps(void) {
             NSString *type = [proxy valueForKey:@"applicationType"];
             NSString *name = [proxy valueForKey:@"localizedName"];
             if (!bid || !name || name.length == 0) continue;
-            if ([bid isEqualToString:@"com.xemyoutube"]) continue;
-            if (![type isEqualToString:@"User"] && ![sysKeep containsObject:bid]) continue;
+            if (![type isEqualToString:@"User"] && ![sysAllow containsObject:bid]) continue;
 
             InstalledAppItem *item = [[InstalledAppItem alloc] init];
             item.bundleID = bid;
             item.name = name;
-            item.fallbackURL = FallbackURLForApp(bid, name);
+            item.webMirrorURL = MirrorURLForApp(bid, name);
             if ([UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)]) {
                 item.icon = [UIImage _applicationIconImageForBundleIdentifier:bid format:2 scale:[UIScreen mainScreen].scale];
             }
@@ -107,234 +126,290 @@ static NSArray<InstalledAppItem *> *GetInstalledApps(void) {
     [list sortUsingComparator:^NSComparisonResult(InstalledAppItem *a, InstalledAppItem *b) {
         return [a.name localizedCaseInsensitiveCompare:b.name];
     }];
-    if (list.count == 0) {
-        NSArray *fallback = @[
-            @[@"com.google.ios.youtube", @"YouTube", @"play.rectangle.fill", @"https://m.youtube.com"],
-            @[@"vn.vietmap.live", @"VIETMAP Live", @"map.fill", @"https://maps.vietmap.vn"],
-            @[@"com.google.Maps", @"Google Maps", @"location.fill", @"https://www.google.com/maps"],
-            @[@"com.zing.mp3", @"Zing MP3", @"music.note", @"https://zingmp3.vn"]
-        ];
-        for (NSArray *f in fallback) {
-            InstalledAppItem *item = [[InstalledAppItem alloc] init];
-            item.bundleID = f[0];
-            item.name = f[1];
-            item.icon = [UIImage systemImageNamed:f[2]];
-            item.fallbackURL = f[3];
-            [list addObject:item];
-        }
-    }
     return list;
 }
 
-#pragma mark - 1 O Cua So Ung Dung (Nhung Scene that + Thanh Tab App + 3 Nut Vang/Xanh/Do)
+#pragma mark - 1 O Cua So Da Nhiem (Co "+ Tab moi", "Gan day", "Tat ca app >", Thanh Tab & Live Host)
 
-@class AppWindowPane;
-@protocol AppWindowPaneDelegate <NSObject>
-- (void)windowPaneDidTapTitle:(AppWindowPane *)pane;
-- (void)windowPaneDidTapLayout:(AppWindowPane *)pane;
-- (void)windowPaneDidTapClose:(AppWindowPane *)pane;
+@class MultiTaskPaneView;
+@protocol MultiTaskPaneDelegate <NSObject>
+- (void)paneDidRequestAppPicker:(MultiTaskPaneView *)pane;
+- (void)paneDidRequestLayoutSheet:(MultiTaskPaneView *)pane;
+- (void)paneDidRequestToggleFull:(MultiTaskPaneView *)pane;
 @end
 
-@interface AppWindowPane : UIView
-@property (nonatomic, assign) NSInteger slotIndex;
-@property (nonatomic, weak) id<AppWindowPaneDelegate> delegate;
-@property (nonatomic, strong) UIImageView *iconView;
-@property (nonatomic, strong) UILabel *titleLabel;
-@property (nonatomic, strong) UIStackView *recentTabsStack;
-@property (nonatomic, strong) UIView *contentHostView;
-@property (nonatomic, strong) WKWebView *webView;
-@property (nonatomic, strong) id activeScenePresenter;
+@interface MultiTaskPaneView : UIView
+@property (nonatomic, assign) NSInteger paneNumber; // 1..4
+@property (nonatomic, weak) id<MultiTaskPaneDelegate> delegate;
+@property (nonatomic, strong) UIButton *activeTabButton;
+@property (nonatomic, strong) UIView *tabStripContainer;
+@property (nonatomic, strong) UIStackView *tabStripStack;
+@property (nonatomic, strong) UIView *emptyStateView;
+@property (nonatomic, strong) UIButton *recentEmptyBtn;
+@property (nonatomic, strong) UIView *runningContainerView;
+@property (nonatomic, strong) WKWebView *interactiveWebView;
+@property (nonatomic, strong) id liveScenePresenter;
+@property (nonatomic, strong) NSMutableArray<InstalledAppItem *> *openedTabs;
 @property (nonatomic, strong) InstalledAppItem *currentApp;
-@property (nonatomic, strong) NSMutableArray<InstalledAppItem *> *recentApps;
-- (instancetype)initWithSlotIndex:(NSInteger)slot;
-- (void)hostApplication:(InstalledAppItem *)app;
+- (instancetype)initWithPaneNumber:(NSInteger)num;
+- (void)openAppInPane:(InstalledAppItem *)app;
+- (void)closeCurrentTab;
 @end
 
-@implementation AppWindowPane
+@implementation MultiTaskPaneView
 
-- (instancetype)initWithSlotIndex:(NSInteger)slot {
+- (instancetype)initWithPaneNumber:(NSInteger)num {
     self = [super initWithFrame:CGRectZero];
     if (self) {
-        self.slotIndex = slot;
-        self.recentApps = [NSMutableArray array];
-        self.backgroundColor = [UIColor systemBackgroundColor];
+        self.paneNumber = num;
+        self.openedTabs = [NSMutableArray array];
+        self.backgroundColor = [UIColor colorWithRed:0.96 green:0.97 blue:0.98 alpha:1.0];
         self.clipsToBounds = YES;
-        [self buildUI];
+        [self setupUI];
     }
     return self;
 }
 
-- (void)buildUI {
-    // 1. Thanh tieu de tren cung (Icon + Ten app + 3 nut tron Vang/Xanh/Do)
-    UIView *topBar = [[UIView alloc] init];
-    topBar.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    topBar.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:topBar];
+- (void)setupUI {
+    // 1. Thanh Chrome tren cung kieu trinh duyet (+ Tab moi v | 3 nut Vang/Xanh/Do)
+    UIView *chromeBar = [[UIView alloc] init];
+    chromeBar.backgroundColor = [UIColor colorWithRed:0.91 green:0.92 blue:0.95 alpha:1.0];
+    chromeBar.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:chromeBar];
 
-    self.iconView = [[UIImageView alloc] init];
-    self.iconView.layer.cornerRadius = 5;
-    self.iconView.clipsToBounds = YES;
-    self.iconView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.activeTabButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.activeTabButton.backgroundColor = [UIColor colorWithRed:0.96 green:0.97 blue:0.98 alpha:1.0];
+    self.activeTabButton.layer.cornerRadius = 10;
+    self.activeTabButton.layer.maskedCorners = kCALayerMinXMinYCorner | kCALayerMaxXMinYCorner;
+    [self.activeTabButton setTitle:@" +  Tab mới  ⌄" forState:UIControlStateNormal];
+    [self.activeTabButton setTitleColor:[UIColor darkGrayColor] forState:UIControlStateNormal];
+    self.activeTabButton.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    self.activeTabButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    self.activeTabButton.contentEdgeInsets = UIEdgeInsetsMake(0, 6, 0, 6);
+    self.activeTabButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.activeTabButton addTarget:self action:@selector(onTapSelectApp) forControlEvents:UIControlEventTouchUpInside];
 
-    self.titleLabel = [[UILabel alloc] init];
-    self.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
-    self.titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    UIButton *btnYellow = [self makeWindowCircle:[UIColor colorWithRed:0.96 green:0.74 blue:0.25 alpha:1.0] symbol:@"arrow.left.and.right" action:@selector(onTapYellow)];
+    UIButton *btnGreen  = [self makeWindowCircle:[UIColor colorWithRed:0.20 green:0.78 blue:0.35 alpha:1.0] symbol:@"arrow.up.left.and.arrow.down.right" action:@selector(onTapGreen)];
+    UIButton *btnRed    = [self makeWindowCircle:[UIColor colorWithRed:0.95 green:0.35 blue:0.30 alpha:1.0] symbol:@"xmark" action:@selector(onTapRed)];
 
-    UIImageView *chev = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"chevron.down"]];
-    chev.tintColor = [UIColor secondaryLabelColor];
-    chev.translatesAutoresizingMaskIntoConstraints = NO;
+    UIStackView *winBtns = [[UIStackView alloc] initWithArrangedSubviews:@[btnYellow, btnGreen, btnRed]];
+    winBtns.spacing = 7;
+    winBtns.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIButton *btnYellow = [self dotBtn:[UIColor systemYellowColor] sel:@selector(onLayout)];
-    UIButton *btnGreen = [self dotBtn:[UIColor systemGreenColor] sel:@selector(onLayout)];
-    UIButton *btnRed = [self dotBtn:[UIColor systemRedColor] sel:@selector(onClose)];
+    [chromeBar addSubview:self.activeTabButton];
+    [chromeBar addSubview:winBtns];
 
-    UIStackView *dots = [[UIStackView alloc] initWithArrangedSubviews:@[btnYellow, btnGreen, btnRed]];
-    dots.spacing = 6;
-    dots.translatesAutoresizingMaskIntoConstraints = NO;
+    // 2. Thanh Tab Strip (hien thi khi da mo >= 1 app: Googl... | YouT... | VIET...)
+    self.tabStripContainer = [[UIView alloc] init];
+    self.tabStripContainer.backgroundColor = [UIColor systemBackgroundColor];
+    self.tabStripContainer.hidden = YES;
+    self.tabStripContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:self.tabStripContainer];
 
-    [topBar addSubview:self.iconView];
-    [topBar addSubview:self.titleLabel];
-    [topBar addSubview:chev];
-    [topBar addSubview:dots];
+    UIScrollView *tabScroll = [[UIScrollView alloc] init];
+    tabScroll.showsHorizontalScrollIndicator = NO;
+    tabScroll.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.tabStripContainer addSubview:tabScroll];
 
-    UITapGestureRecognizer *tapTitle = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onTitle)];
-    [topBar addGestureRecognizer:tapTitle];
+    self.tabStripStack = [[UIStackView alloc] init];
+    self.tabStripStack.spacing = 4;
+    self.tabStripStack.translatesAutoresizingMaskIntoConstraints = NO;
+    [tabScroll addSubview:self.tabStripStack];
 
-    // 2. Thanh tab chuyen nhanh app da mo trong o (giong Googl... | YouT... | VIET...)
-    UIScrollView *tabStrip = [[UIScrollView alloc] init];
-    tabStrip.backgroundColor = [UIColor systemBackgroundColor];
-    tabStrip.showsHorizontalScrollIndicator = NO;
-    tabStrip.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:tabStrip];
+    // 3. Trang thai "+ Tab moi" khi chua mo app (Giong het anh 2: Gan day / Chua co app gan day / Tat ca app >)
+    self.emptyStateView = [[UIView alloc] init];
+    self.emptyStateView.backgroundColor = [UIColor colorWithRed:0.96 green:0.97 blue:0.98 alpha:1.0];
+    self.emptyStateView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:self.emptyStateView];
 
-    self.recentTabsStack = [[UIStackView alloc] init];
-    self.recentTabsStack.axis = UILayoutConstraintAxisHorizontal;
-    self.recentTabsStack.spacing = 6;
-    self.recentTabsStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [tabStrip addSubview:self.recentTabsStack];
+    UILabel *recentHdr = [[UILabel alloc] init];
+    recentHdr.text = @"Gần đây";
+    recentHdr.font = [UIFont boldSystemFontOfSize:12];
+    recentHdr.textColor = [UIColor labelColor];
+    recentHdr.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // 3. Khung noi dung chinh (nhung Scene app that hoac WebView)
-    self.contentHostView = [[UIView alloc] init];
-    self.contentHostView.backgroundColor = [UIColor blackColor];
-    self.contentHostView.clipsToBounds = YES;
-    self.contentHostView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self addSubview:self.contentHostView];
+    self.recentEmptyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.recentEmptyBtn setTitle:@"Chưa có app gần đây" forState:UIControlStateNormal];
+    [self.recentEmptyBtn setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateNormal];
+    self.recentEmptyBtn.titleLabel.font = [UIFont systemFontOfSize:11];
+    self.recentEmptyBtn.backgroundColor = [UIColor colorWithWhite:0.92 alpha:1.0];
+    self.recentEmptyBtn.layer.cornerRadius = 10;
+    self.recentEmptyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.recentEmptyBtn addTarget:self action:@selector(onTapSelectApp) forControlEvents:UIControlEventTouchUpInside];
+
+    UIButton *allAppsBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [allAppsBtn setTitle:@"Tất cả app ›" forState:UIControlStateNormal];
+    [allAppsBtn setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
+    allAppsBtn.titleLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    allAppsBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [allAppsBtn addTarget:self action:@selector(onTapSelectApp) forControlEvents:UIControlEventTouchUpInside];
+
+    [self.emptyStateView addSubview:recentHdr];
+    [self.emptyStateView addSubview:self.recentEmptyBtn];
+    [self.emptyStateView addSubview:allAppsBtn];
+
+    // 4. Khung chay ung dung song song
+    self.runningContainerView = [[UIView alloc] init];
+    self.runningContainerView.backgroundColor = [UIColor blackColor];
+    self.runningContainerView.hidden = YES;
+    self.runningContainerView.clipsToBounds = YES;
+    self.runningContainerView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self addSubview:self.runningContainerView];
 
     WKWebViewConfiguration *cfg = [[WKWebViewConfiguration alloc] init];
     cfg.allowsInlineMediaPlayback = YES;
     cfg.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
-    self.webView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:cfg];
-    self.webView.customUserAgent = @"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
-    self.webView.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.contentHostView addSubview:self.webView];
+    self.interactiveWebView = [[WKWebView alloc] initWithFrame:CGRectZero configuration:cfg];
+    self.interactiveWebView.customUserAgent = @"Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
+    self.interactiveWebView.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.runningContainerView addSubview:self.interactiveWebView];
 
     [NSLayoutConstraint activateConstraints:@[
-        [topBar.topAnchor constraintEqualToAnchor:self.topAnchor],
-        [topBar.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [topBar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [topBar.heightAnchor constraintEqualToConstant:30],
+        [chromeBar.topAnchor constraintEqualToAnchor:self.topAnchor],
+        [chromeBar.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [chromeBar.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [chromeBar.heightAnchor constraintEqualToConstant:34],
 
-        [self.iconView.leadingAnchor constraintEqualToAnchor:topBar.leadingAnchor constant:8],
-        [self.iconView.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
-        [self.iconView.widthAnchor constraintEqualToConstant:17],
-        [self.iconView.heightAnchor constraintEqualToConstant:17],
+        [self.activeTabButton.leadingAnchor constraintEqualToAnchor:chromeBar.leadingAnchor constant:6],
+        [self.activeTabButton.bottomAnchor constraintEqualToAnchor:chromeBar.bottomAnchor],
+        [self.activeTabButton.heightAnchor constraintEqualToConstant:28],
+        [self.activeTabButton.trailingAnchor constraintLessThanOrEqualToAnchor:winBtns.leadingAnchor constant:-6],
+        [self.activeTabButton.widthAnchor constraintGreaterThanOrEqualToConstant:88],
 
-        [self.titleLabel.leadingAnchor constraintEqualToAnchor:self.iconView.trailingAnchor constant:6],
-        [self.titleLabel.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
-        [self.titleLabel.widthAnchor constraintLessThanOrEqualToConstant:85],
+        [winBtns.trailingAnchor constraintEqualToAnchor:chromeBar.trailingAnchor constant:-8],
+        [winBtns.centerYAnchor constraintEqualToAnchor:chromeBar.centerYAnchor],
 
-        [chev.leadingAnchor constraintEqualToAnchor:self.titleLabel.trailingAnchor constant:3],
-        [chev.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
-        [chev.widthAnchor constraintEqualToConstant:10],
-        [chev.heightAnchor constraintEqualToConstant:10],
+        [self.tabStripContainer.topAnchor constraintEqualToAnchor:chromeBar.bottomAnchor],
+        [self.tabStripContainer.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [self.tabStripContainer.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [self.tabStripContainer.heightAnchor constraintEqualToConstant:26],
 
-        [dots.trailingAnchor constraintEqualToAnchor:topBar.trailingAnchor constant:-8],
-        [dots.centerYAnchor constraintEqualToAnchor:topBar.centerYAnchor],
+        [tabScroll.topAnchor constraintEqualToAnchor:self.tabStripContainer.topAnchor],
+        [tabScroll.bottomAnchor constraintEqualToAnchor:self.tabStripContainer.bottomAnchor],
+        [tabScroll.leadingAnchor constraintEqualToAnchor:self.tabStripContainer.leadingAnchor constant:4],
+        [tabScroll.trailingAnchor constraintEqualToAnchor:self.tabStripContainer.trailingAnchor constant:-4],
 
-        [tabStrip.topAnchor constraintEqualToAnchor:topBar.bottomAnchor],
-        [tabStrip.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [tabStrip.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [tabStrip.heightAnchor constraintEqualToConstant:26],
+        [self.tabStripStack.leadingAnchor constraintEqualToAnchor:tabScroll.leadingAnchor],
+        [self.tabStripStack.trailingAnchor constraintEqualToAnchor:tabScroll.trailingAnchor],
+        [self.tabStripStack.centerYAnchor constraintEqualToAnchor:tabScroll.centerYAnchor],
 
-        [self.recentTabsStack.leadingAnchor constraintEqualToAnchor:tabStrip.leadingAnchor constant:6],
-        [self.recentTabsStack.trailingAnchor constraintEqualToAnchor:tabStrip.trailingAnchor constant:-6],
-        [self.recentTabsStack.centerYAnchor constraintEqualToAnchor:tabStrip.centerYAnchor],
+        [self.emptyStateView.topAnchor constraintEqualToAnchor:chromeBar.bottomAnchor],
+        [self.emptyStateView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [self.emptyStateView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [self.emptyStateView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
 
-        [self.contentHostView.topAnchor constraintEqualToAnchor:tabStrip.bottomAnchor],
-        [self.contentHostView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-        [self.contentHostView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
-        [self.contentHostView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
+        [recentHdr.leadingAnchor constraintEqualToAnchor:self.emptyStateView.leadingAnchor constant:14],
+        [recentHdr.centerYAnchor constraintEqualToAnchor:self.emptyStateView.centerYAnchor constant:-48],
 
-        [self.webView.topAnchor constraintEqualToAnchor:self.contentHostView.topAnchor],
-        [self.webView.leadingAnchor constraintEqualToAnchor:self.contentHostView.leadingAnchor],
-        [self.webView.trailingAnchor constraintEqualToAnchor:self.contentHostView.trailingAnchor],
-        [self.webView.bottomAnchor constraintEqualToAnchor:self.contentHostView.bottomAnchor]
+        [self.recentEmptyBtn.topAnchor constraintEqualToAnchor:recentHdr.bottomAnchor constant:8],
+        [self.recentEmptyBtn.leadingAnchor constraintEqualToAnchor:self.emptyStateView.leadingAnchor constant:14],
+        [self.recentEmptyBtn.trailingAnchor constraintEqualToAnchor:self.emptyStateView.trailingAnchor constant:-14],
+        [self.recentEmptyBtn.heightAnchor constraintEqualToConstant:36],
+
+        [allAppsBtn.topAnchor constraintEqualToAnchor:self.recentEmptyBtn.bottomAnchor constant:14],
+        [allAppsBtn.centerXAnchor constraintEqualToAnchor:self.emptyStateView.centerXAnchor],
+
+        [self.runningContainerView.topAnchor constraintEqualToAnchor:self.tabStripContainer.bottomAnchor],
+        [self.runningContainerView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+        [self.runningContainerView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+        [self.runningContainerView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
+
+        [self.interactiveWebView.topAnchor constraintEqualToAnchor:self.runningContainerView.topAnchor],
+        [self.interactiveWebView.leadingAnchor constraintEqualToAnchor:self.runningContainerView.leadingAnchor],
+        [self.interactiveWebView.trailingAnchor constraintEqualToAnchor:self.runningContainerView.trailingAnchor],
+        [self.interactiveWebView.bottomAnchor constraintEqualToAnchor:self.runningContainerView.bottomAnchor]
     ]];
 }
 
-- (UIButton *)dotBtn:(UIColor *)color sel:(SEL)sel {
-    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-    b.backgroundColor = color;
-    b.layer.cornerRadius = 5.5;
+- (UIButton *)makeWindowCircle:(UIColor *)bg symbol:(NSString *)sym action:(SEL)sel {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.backgroundColor = bg;
+    b.tintColor = [[UIColor blackColor] colorWithAlphaComponent:0.65];
+    b.layer.cornerRadius = 7;
+    UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:7 weight:UIImageSymbolWeightBold];
+    [b setImage:[UIImage systemImageNamed:sym withConfiguration:cfg] forState:UIControlStateNormal];
     b.translatesAutoresizingMaskIntoConstraints = NO;
-    [b.widthAnchor constraintEqualToConstant:11].active = YES;
-    [b.heightAnchor constraintEqualToConstant:11].active = YES;
+    [b.widthAnchor constraintEqualToConstant:14].active = YES;
+    [b.heightAnchor constraintEqualToConstant:14].active = YES;
     [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
     return b;
 }
 
-- (void)hostApplication:(InstalledAppItem *)app {
+- (void)openAppInPane:(InstalledAppItem *)app {
     if (!app) return;
     self.currentApp = app;
-    self.titleLabel.text = app.name;
-    self.iconView.image = app.icon;
+    self.emptyStateView.hidden = YES;
+    self.tabStripContainer.hidden = NO;
+    self.runningContainerView.hidden = NO;
 
-    // Cap nhat danh sach tab mo nhanh
-    NSPredicate *pred = [NSPredicate predicateWithFormat:@"bundleID != %@", app.bundleID];
-    [self.recentApps filterUsingPredicate:pred];
-    [self.recentApps insertObject:app atIndex:0];
-    if (self.recentApps.count > 4) [self.recentApps removeLastObject];
-    [self rebuildRecentTabs];
+    NSString *shortName = app.name.length > 8 ? [[app.name substringToIndex:7] stringByAppendingString:@"..."] : app.name;
+    [self.activeTabButton setTitle:[NSString stringWithFormat:@" %@  ⌄", shortName] forState:UIControlStateNormal];
+    [self.activeTabButton setImage:[self scaledIcon:app.icon size:CGSizeMake(14, 14)] forState:UIControlStateNormal];
 
-    // Thu nhung Scene ung dung that qua FrontBoard neu he thong cho phep
-    BOOL embeddedNativeScene = [self tryEmbedNativeSceneForBundleID:app.bundleID];
-    if (!embeddedNativeScene) {
-        self.webView.hidden = NO;
-        [self.webView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:app.fallbackURL]]];
+    NSPredicate *p = [NSPredicate predicateWithFormat:@"bundleID != %@", app.bundleID];
+    [self.openedTabs filterUsingPredicate:p];
+    [self.openedTabs insertObject:app atIndex:0];
+    if (self.openedTabs.count > 4) [self.openedTabs removeLastObject];
+    [self refreshTabStrip];
+
+    // 1. Khoi chay ngam ung dung goc & nhung truc tiep Live Scene neu co quyen FrontBoard
+    BOOL attachedLive = [self launchAndAttachLiveSceneForApp:app];
+    if (!attachedLive) {
+        self.interactiveWebView.hidden = NO;
+        [self.interactiveWebView loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:app.webMirrorURL]]];
     }
 }
 
-- (BOOL)tryEmbedNativeSceneForBundleID:(NSString *)bundleID {
+- (BOOL)launchAndAttachLiveSceneForApp:(InstalledAppItem *)app {
+    dlopen("/System/Library/PrivateFrameworks/FrontBoardServices.framework/FrontBoardServices", RTLD_LAZY);
     dlopen("/System/Library/PrivateFrameworks/FrontBoard.framework/FrontBoard", RTLD_LAZY);
-    Class fbSceneMgrClass = NSClassFromString(@"FBSceneManager");
-    if (!fbSceneMgrClass || ![fbSceneMgrClass respondsToSelector:@selector(sharedInstance)]) {
-        return NO;
+
+    // Khoi chay ngam process ung dung goc qua FBSOpenApplicationService
+    Class openSvcClass = NSClassFromString(@"FBSOpenApplicationService");
+    Class openOptClass = NSClassFromString(@"FBSOpenApplicationOptions");
+    if (openSvcClass && openOptClass) {
+        id service = [openSvcClass respondsToSelector:@selector(serviceWithDefaultShellEndpoint)] ? [openSvcClass serviceWithDefaultShellEndpoint] : nil;
+        if (service) {
+            NSDictionary *optsDict = @{ @"__ActivateSuspended" : @YES };
+            id opts = [openOptClass optionsWithDictionary:optsDict];
+            [service openApplication:app.bundleID withOptions:opts completion:nil];
+        }
     }
 
-    id sceneMgr = [fbSceneMgrClass sharedInstance];
-    if (![sceneMgr respondsToSelector:@selector(scenes)]) return NO;
-
-    NSSet *scenes = [sceneMgr scenes];
-    for (id scene in scenes) {
-        NSString *ident = [scene valueForKey:@"identifier"];
-        if ([ident containsString:bundleID]) {
-            id presMgr = [scene uiPresentationManager];
-            if ([presMgr respondsToSelector:@selector(createPresenterWithIdentifier:)]) {
-                NSString *presID = [NSString stringWithFormat:@"XemYouTube-Slot%ld", (long)self.slotIndex];
-                id presenter = [presMgr createPresenterWithIdentifier:presID];
-                if ([presenter respondsToSelector:@selector(activate)]) {
-                    [presenter activate];
-                    UIView *hostView = [presenter presentationView];
-                    if (hostView) {
-                        for (UIView *sub in self.contentHostView.subviews) {
-                            if (sub != self.webView) [sub removeFromSuperview];
+    // Kiem tra FBSceneManager de lay UIScenePresenter truc tiep
+    Class fbMgrClass = NSClassFromString(@"FBSceneManager");
+    if (fbMgrClass && [fbMgrClass respondsToSelector:@selector(sharedInstance)]) {
+        id mgr = [fbMgrClass sharedInstance];
+        if ([mgr respondsToSelector:@selector(scenes)]) {
+            for (id scene in [mgr scenes]) {
+                NSString *sid = [scene valueForKey:@"identifier"];
+                if ([sid containsString:app.bundleID]) {
+                    if ([scene respondsToSelector:@selector(updateSettingsWithBlock:)]) {
+                        CGRect targetBounds = self.runningContainerView.bounds.size.width > 10 ? self.runningContainerView.bounds : CGRectMake(0, 0, 180, 360);
+                        [scene updateSettingsWithBlock:^(id mutableSettings) {
+                            if ([mutableSettings respondsToSelector:@selector(setForeground:)]) [mutableSettings setForeground:YES];
+                            if ([mutableSettings respondsToSelector:@selector(setFrame:)]) [mutableSettings setFrame:targetBounds];
+                        }];
+                    }
+                    id presMgr = [scene uiPresentationManager];
+                    if ([presMgr respondsToSelector:@selector(createPresenterWithIdentifier:)]) {
+                        id presenter = [presMgr createPresenterWithIdentifier:[NSString stringWithFormat:@"SidePlayHost-%ld", (long)self.paneNumber]];
+                        if ([presenter respondsToSelector:@selector(activate)]) {
+                            [presenter activate];
+                            UIView *v = [presenter presentationView];
+                            if (v) {
+                                for (UIView *sub in self.runningContainerView.subviews) {
+                                    if (sub != self.interactiveWebView) [sub removeFromSuperview];
+                                }
+                                self.interactiveWebView.hidden = YES;
+                                v.frame = self.runningContainerView.bounds;
+                                v.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+                                [self.runningContainerView addSubview:v];
+                                self.liveScenePresenter = presenter;
+                                return YES;
+                            }
                         }
-                        self.webView.hidden = YES;
-                        hostView.frame = self.contentHostView.bounds;
-                        hostView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-                        [self.contentHostView addSubview:hostView];
-                        self.activeScenePresenter = presenter;
-                        return YES;
                     }
                 }
             }
@@ -343,304 +418,274 @@ static NSArray<InstalledAppItem *> *GetInstalledApps(void) {
     return NO;
 }
 
-- (void)rebuildRecentTabs {
-    for (UIView *v in self.recentTabsStack.arrangedSubviews) {
-        [self.recentTabsStack removeArrangedSubview:v];
-        [v removeFromSuperview];
-    }
-    for (NSInteger i = 0; i < self.recentApps.count; i++) {
-        InstalledAppItem *item = self.recentApps[i];
-        UIButton *tabBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        tabBtn.tag = i;
-        [tabBtn setTitle:[NSString stringWithFormat:@" %@", item.name] forState:UIControlStateNormal];
-        [tabBtn setImage:[self resizeIcon:item.icon size:CGSizeMake(13, 13)] forState:UIControlStateNormal];
-        tabBtn.tintColor = [UIColor labelColor];
-        tabBtn.titleLabel.font = [UIFont systemFontOfSize:11 weight:(i == 0 ? UIFontWeightBold : UIFontWeightRegular)];
-        tabBtn.backgroundColor = (i == 0) ? [UIColor secondarySystemBackgroundColor] : [UIColor clearColor];
-        tabBtn.layer.cornerRadius = 6;
-        tabBtn.contentEdgeInsets = UIEdgeInsetsMake(2, 6, 2, 6);
-        [tabBtn addTarget:self action:@selector(recentTabTapped:) forControlEvents:UIControlEventTouchUpInside];
-        [self.recentTabsStack addArrangedSubview:tabBtn];
+- (void)closeCurrentTab {
+    self.currentApp = nil;
+    self.runningContainerView.hidden = YES;
+    self.tabStripContainer.hidden = YES;
+    self.emptyStateView.hidden = NO;
+    [self.activeTabButton setImage:nil forState:UIControlStateNormal];
+    [self.activeTabButton setTitle:@" +  Tab mới  ⌄" forState:UIControlStateNormal];
+    if (self.openedTabs.count > 0) {
+        InstalledAppItem *last = self.openedTabs.firstObject;
+        [self.recentEmptyBtn setTitle:[NSString stringWithFormat:@"Mở lại: %@", last.name] forState:UIControlStateNormal];
     }
 }
 
-- (UIImage *)resizeIcon:(UIImage *)img size:(CGSize)sz {
+- (void)refreshTabStrip {
+    for (UIView *v in self.tabStripStack.arrangedSubviews) {
+        [self.tabStripStack removeArrangedSubview:v];
+        [v removeFromSuperview];
+    }
+    for (NSInteger i = 0; i < self.openedTabs.count; i++) {
+        InstalledAppItem *item = self.openedTabs[i];
+        UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+        b.tag = i;
+        NSString *shortTitle = item.name.length > 7 ? [[item.name substringToIndex:6] stringByAppendingString:@"..."] : item.name;
+        [b setTitle:[NSString stringWithFormat:@" %@", shortTitle] forState:UIControlStateNormal];
+        [b setImage:[self scaledIcon:item.icon size:CGSizeMake(12, 12)] forState:UIControlStateNormal];
+        b.tintColor = [UIColor labelColor];
+        b.titleLabel.font = [UIFont systemFontOfSize:10 weight:(i == 0 ? UIFontWeightSemibold : UIFontWeightRegular)];
+        b.backgroundColor = (i == 0) ? [UIColor secondarySystemBackgroundColor] : [UIColor clearColor];
+        b.layer.cornerRadius = 5;
+        b.contentEdgeInsets = UIEdgeInsetsMake(2, 5, 2, 5);
+        [b addTarget:self action:@selector(onTapRecentStrip:) forControlEvents:UIControlEventTouchUpInside];
+        [self.tabStripStack addArrangedSubview:b];
+    }
+}
+
+- (UIImage *)scaledIcon:(UIImage *)img size:(CGSize)sz {
+    if (!img) return nil;
     UIGraphicsBeginImageContextWithOptions(sz, NO, 0.0);
+    [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, sz.width, sz.height) cornerRadius:3] addClip];
     [img drawInRect:CGRectMake(0, 0, sz.width, sz.height)];
     UIImage *res = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     return [res imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
 }
 
-- (void)recentTabTapped:(UIButton *)sender {
-    if (sender.tag >= 0 && sender.tag < self.recentApps.count) {
-        [self hostApplication:self.recentApps[sender.tag]];
+- (void)onTapRecentStrip:(UIButton *)sender {
+    if (sender.tag >= 0 && sender.tag < self.openedTabs.count) {
+        [self openAppInPane:self.openedTabs[sender.tag]];
     }
 }
 
-- (void)onTitle { [self.delegate windowPaneDidTapTitle:self]; }
-- (void)onLayout { [self.delegate windowPaneDidTapLayout:self]; }
-- (void)onClose { [self.delegate windowPaneDidTapClose:self]; }
+- (void)onTapSelectApp { [self.delegate paneDidRequestAppPicker:self]; }
+- (void)onTapYellow { [self.delegate paneDidRequestLayoutSheet:self]; }
+- (void)onTapGreen { [self.delegate paneDidRequestToggleFull:self]; }
+- (void)onTapRed { [self closeCurrentTab]; }
 
 @end
 
-#pragma mark - Hop Thoai "Chia man hinh" (6 Bo cuc + Mo nhanh + Thoat)
+#pragma mark - Hop Thoai "Chia man hinh" (Giong het anh 6)
 
-typedef NS_ENUM(NSInteger, SplitLayoutMode) {
-    SplitLayoutSingle = 0,     // 1 o toan man hinh
-    SplitLayoutDual = 1,       // 2 o doc
-    SplitLayoutTriple = 2,     // 3 o doc
-    SplitLayoutQuad = 3,       // 4 o doc
-    SplitLayoutGrid3 = 4,      // 1 trai + 2 phai
-    SplitLayoutPiP = 5         // 1 lon + 1 noi goc duoi
+typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
+    SidePlaySplitSingle = 0,
+    SidePlaySplitDual = 1,
+    SidePlaySplitTriple = 2,
+    SidePlaySplitQuad = 3,
+    SidePlaySplitGrid3 = 4,
+    SidePlaySplitPiP = 5
 };
 
-@interface SplitLayoutSheetView : UIView
-@property (nonatomic, assign) SplitLayoutMode selectedMode;
-@property (nonatomic, copy) void (^onSelectMode)(SplitLayoutMode mode);
-@property (nonatomic, copy) void (^onQuickLaunch)(NSString *bundleID);
-@property (nonatomic, copy) void (^onDismiss)(void);
-- (instancetype)initWithCurrentMode:(SplitLayoutMode)mode;
+@interface SidePlayLayoutModal : UIView
+@property (nonatomic, assign) SidePlaySplitMode activeMode;
+@property (nonatomic, copy) void (^onPickMode)(SidePlaySplitMode mode);
+@property (nonatomic, copy) void (^onQuickPreset)(void);
+@property (nonatomic, copy) void (^onClose)(void);
+- (instancetype)initWithMode:(SidePlaySplitMode)mode;
 @end
 
-@implementation SplitLayoutSheetView
+@implementation SidePlayLayoutModal
 
-- (instancetype)initWithCurrentMode:(SplitLayoutMode)mode {
+- (instancetype)initWithMode:(SidePlaySplitMode)mode {
     self = [super initWithFrame:CGRectZero];
     if (self) {
-        self.selectedMode = mode;
+        self.activeMode = mode;
         self.backgroundColor = [UIColor systemBackgroundColor];
         self.layer.cornerRadius = 22;
-        self.layer.borderWidth = 2.0;
-        self.layer.borderColor = [UIColor systemGray3Color].CGColor;
-        self.clipsToBounds = YES;
-        [self setupUI];
+        self.layer.shadowColor = [UIColor blackColor].CGColor;
+        self.layer.shadowOpacity = 0.25;
+        self.layer.shadowRadius = 14;
+        [self buildModal];
     }
     return self;
 }
 
-- (void)setupUI {
-    UILabel *title = [[UILabel alloc] init];
-    title.text = @"Chia màn hình";
-    title.font = [UIFont boldSystemFontOfSize:17];
-    title.textAlignment = NSTextAlignmentCenter;
-    title.translatesAutoresizingMaskIntoConstraints = NO;
+- (void)buildModal {
+    UILabel *hdr = [[UILabel alloc] init];
+    hdr.text = @"Chia màn hình";
+    hdr.font = [UIFont boldSystemFontOfSize:16];
+    hdr.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [closeBtn setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
-    closeBtn.tintColor = [UIColor systemGray2Color];
-    closeBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [closeBtn addTarget:self action:@selector(dismissTap) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *xBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [xBtn setImage:[UIImage systemImageNamed:@"xmark.circle.fill"] forState:UIControlStateNormal];
+    xBtn.tintColor = [UIColor systemGray3Color];
+    xBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [xBtn addTarget:self action:@selector(closeModal) forControlEvents:UIControlEventTouchUpInside];
 
-    // Hang 1: 4 kieu chia (1 o, 2 o, 3 o, 4 o)
-    NSArray *row1Icons = @[@"rectangle.fill", @"rectangle.split.2x1.fill", @"rectangle.split.3x1.fill", @"rectangle.grid.2x2.fill"];
+    NSArray *icons1 = @[@"rectangle.fill", @"rectangle.split.2x1.fill", @"rectangle.split.3x1.fill", @"rectangle.grid.2x2.fill"];
     UIStackView *row1 = [[UIStackView alloc] init];
     row1.spacing = 10;
     row1.distribution = UIStackViewDistributionFillEqually;
     row1.translatesAutoresizingMaskIntoConstraints = NO;
     for (NSInteger i = 0; i < 4; i++) {
-        [row1 addArrangedSubview:[self layoutCardButtonWithMode:(SplitLayoutMode)i icon:row1Icons[i]]];
+        [row1 addArrangedSubview:[self modeButton:(SidePlaySplitMode)i icon:icons1[i]]];
     }
 
-    // Hang 2: Luoi 1+2, PiP, nut +
     UIStackView *row2 = [[UIStackView alloc] init];
     row2.spacing = 10;
     row2.distribution = UIStackViewDistributionFillEqually;
     row2.translatesAutoresizingMaskIntoConstraints = NO;
-    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutGrid3 icon:@"rectangle.leftthird.inset.filled"]];
-    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutPiP icon:@"pip.fill"]];
-    [row2 addArrangedSubview:[self layoutCardButtonWithMode:SplitLayoutDual icon:@"plus"]];
+    [row2 addArrangedSubview:[self modeButton:SidePlaySplitGrid3 icon:@"rectangle.leftthird.inset.filled"]];
+    [row2 addArrangedSubview:[self modeButton:SidePlaySplitPiP icon:@"pip.fill"]];
+    [row2 addArrangedSubview:[self modeButton:SidePlaySplitDual icon:@"plus"]];
 
-    UILabel *quickLbl = [[UILabel alloc] init];
-    quickLbl.text = @"MỞ NHANH";
-    quickLbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightBold];
-    quickLbl.textColor = [UIColor secondaryLabelColor];
-    quickLbl.textAlignment = NSTextAlignmentCenter;
-    quickLbl.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *qTitle = [[UILabel alloc] init];
+    qTitle.text = @"MỞ NHANH";
+    qTitle.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
+    qTitle.textColor = [UIColor secondaryLabelColor];
+    qTitle.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Khung vien net dut MO NHANH
-    UIView *quickBox = [[UIView alloc] init];
-    quickBox.layer.cornerRadius = 18;
-    quickBox.layer.borderWidth = 1.5;
-    quickBox.layer.borderColor = [UIColor systemBlueColor].CGColor;
-    quickBox.translatesAutoresizingMaskIntoConstraints = NO;
-
-    UIButton *qDual = [self quickAppBtnWithIcon:[UIImage systemImageNamed:@"rectangle.split.2x1.fill"] tag:0];
-    UIImage *ytIcon = [UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)] ?
-        [UIImage _applicationIconImageForBundleIdentifier:@"com.google.ios.youtube" format:2 scale:2.0] : [UIImage systemImageNamed:@"play.rectangle.fill"];
-    UIImage *vmIcon = [UIImage respondsToSelector:@selector(_applicationIconImageForBundleIdentifier:format:scale:)] ?
-        [UIImage _applicationIconImageForBundleIdentifier:@"vn.vietmap.live" format:2 scale:2.0] : [UIImage systemImageNamed:@"map.fill"];
-
-    UIButton *qYT = [self quickAppBtnWithIcon:[ytIcon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] tag:1];
-    UIButton *qVM = [self quickAppBtnWithIcon:[vmIcon imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal] tag:2];
-
-    UIStackView *qStack = [[UIStackView alloc] initWithArrangedSubviews:@[qDual, qYT, qVM]];
-    qStack.spacing = 12;
-    qStack.translatesAutoresizingMaskIntoConstraints = NO;
-    [quickBox addSubview:qStack];
+    UIButton *quickPill = [UIButton buttonWithType:UIButtonTypeSystem];
+    quickPill.backgroundColor = [[UIColor systemBlueColor] colorWithAlphaComponent:0.08];
+    quickPill.layer.cornerRadius = 18;
+    quickPill.layer.borderWidth = 1.2;
+    quickPill.layer.borderColor = [UIColor systemBlueColor].CGColor;
+    [quickPill setTitle:@"  +   ⊞   ▶   🗺️  " forState:UIControlStateNormal];
+    quickPill.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    quickPill.translatesAutoresizingMaskIntoConstraints = NO;
+    [quickPill addTarget:self action:@selector(quickTap) forControlEvents:UIControlEventTouchUpInside];
 
     UIButton *exitBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [exitBtn setTitle:@"Thoát XemYouTube" forState:UIControlStateNormal];
+    [exitBtn setTitle:@"Thoát SidePlay" forState:UIControlStateNormal];
     [exitBtn setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
-    exitBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    exitBtn.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
     exitBtn.backgroundColor = [UIColor systemGray6Color];
     exitBtn.layer.cornerRadius = 12;
     exitBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [exitBtn addTarget:self action:@selector(exitAppTap) forControlEvents:UIControlEventTouchUpInside];
+    [exitBtn addTarget:self action:@selector(exitTap) forControlEvents:UIControlEventTouchUpInside];
 
-    [self addSubview:title];
-    [self addSubview:closeBtn];
+    [self addSubview:hdr];
+    [self addSubview:xBtn];
     [self addSubview:row1];
     [self addSubview:row2];
-    [self addSubview:quickLbl];
-    [self addSubview:quickBox];
+    [self addSubview:qTitle];
+    [self addSubview:quickPill];
     [self addSubview:exitBtn];
 
     [NSLayoutConstraint activateConstraints:@[
-        [title.topAnchor constraintEqualToAnchor:self.topAnchor constant:16],
-        [title.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [hdr.topAnchor constraintEqualToAnchor:self.topAnchor constant:16],
+        [hdr.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [xBtn.centerYAnchor constraintEqualToAnchor:hdr.centerYAnchor],
+        [xBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
 
-        [closeBtn.centerYAnchor constraintEqualToAnchor:title.centerYAnchor],
-        [closeBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
-        [closeBtn.widthAnchor constraintEqualToConstant:28],
-        [closeBtn.heightAnchor constraintEqualToConstant:28],
-
-        [row1.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:16],
+        [row1.topAnchor constraintEqualToAnchor:hdr.bottomAnchor constant:16],
         [row1.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:16],
         [row1.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-16],
-        [row1.heightAnchor constraintEqualToConstant:48],
+        [row1.heightAnchor constraintEqualToConstant:46],
 
         [row2.topAnchor constraintEqualToAnchor:row1.bottomAnchor constant:10],
-        [row2.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:42],
-        [row2.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-42],
-        [row2.heightAnchor constraintEqualToConstant:48],
+        [row2.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:44],
+        [row2.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-44],
+        [row2.heightAnchor constraintEqualToConstant:46],
 
-        [quickLbl.topAnchor constraintEqualToAnchor:row2.bottomAnchor constant:18],
-        [quickLbl.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [qTitle.topAnchor constraintEqualToAnchor:row2.bottomAnchor constant:18],
+        [qTitle.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
 
-        [quickBox.topAnchor constraintEqualToAnchor:quickLbl.bottomAnchor constant:8],
-        [quickBox.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-        [quickBox.heightAnchor constraintEqualToConstant:46],
-        [quickBox.widthAnchor constraintEqualToConstant:168],
+        [quickPill.topAnchor constraintEqualToAnchor:qTitle.bottomAnchor constant:8],
+        [quickPill.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+        [quickPill.heightAnchor constraintEqualToConstant:40],
+        [quickPill.widthAnchor constraintEqualToConstant:156],
 
-        [qStack.centerXAnchor constraintEqualToAnchor:quickBox.centerXAnchor],
-        [qStack.centerYAnchor constraintEqualToAnchor:quickBox.centerYAnchor],
-
-        [exitBtn.topAnchor constraintEqualToAnchor:quickBox.bottomAnchor constant:18],
+        [exitBtn.topAnchor constraintEqualToAnchor:quickPill.bottomAnchor constant:18],
         [exitBtn.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-        [exitBtn.widthAnchor constraintEqualToConstant:170],
-        [exitBtn.heightAnchor constraintEqualToConstant:36]
+        [exitBtn.widthAnchor constraintEqualToConstant:140],
+        [exitBtn.heightAnchor constraintEqualToConstant:34]
     ]];
 }
 
-- (UIButton *)layoutCardButtonWithMode:(SplitLayoutMode)mode icon:(NSString *)iconName {
-    BOOL isSelected = (self.selectedMode == mode);
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-    btn.tag = mode;
-    [btn setImage:[UIImage systemImageNamed:iconName] forState:UIControlStateNormal];
-    btn.tintColor = isSelected ? [UIColor systemBlueColor] : [UIColor systemGrayColor];
-    btn.backgroundColor = isSelected ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.15] : [UIColor systemGray6Color];
-    btn.layer.cornerRadius = 12;
-    if (isSelected) {
-        btn.layer.borderWidth = 2.0;
-        btn.layer.borderColor = [UIColor systemBlueColor].CGColor;
+- (UIButton *)modeButton:(SidePlaySplitMode)m icon:(NSString *)ic {
+    BOOL sel = (self.activeMode == m);
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.tag = m;
+    [b setImage:[UIImage systemImageNamed:ic] forState:UIControlStateNormal];
+    b.tintColor = sel ? [UIColor systemBlueColor] : [UIColor systemGrayColor];
+    b.backgroundColor = sel ? [[UIColor systemBlueColor] colorWithAlphaComponent:0.15] : [UIColor systemGray6Color];
+    b.layer.cornerRadius = 12;
+    if (sel) {
+        b.layer.borderWidth = 1.8;
+        b.layer.borderColor = [UIColor systemBlueColor].CGColor;
     }
-    [btn addTarget:self action:@selector(modeTapped:) forControlEvents:UIControlEventTouchUpInside];
-    return btn;
-}
-
-- (UIButton *)quickAppBtnWithIcon:(UIImage *)img tag:(NSInteger)tag {
-    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
-    b.tag = tag;
-    [b setImage:img forState:UIControlStateNormal];
-    b.layer.cornerRadius = 8;
-    b.clipsToBounds = YES;
-    [b.widthAnchor constraintEqualToConstant:30].active = YES;
-    [b.heightAnchor constraintEqualToConstant:30].active = YES;
-    [b addTarget:self action:@selector(quickTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [b addTarget:self action:@selector(modeTap:) forControlEvents:UIControlEventTouchUpInside];
     return b;
 }
 
-- (void)modeTapped:(UIButton *)sender {
-    if (self.onSelectMode) self.onSelectMode((SplitLayoutMode)sender.tag);
-}
-
-- (void)quickTapped:(UIButton *)sender {
-    if (sender.tag == 0 && self.onSelectMode) {
-        self.onSelectMode(SplitLayoutDual);
-    } else if (sender.tag == 1 && self.onQuickLaunch) {
-        self.onQuickLaunch(@"com.google.ios.youtube");
-    } else if (sender.tag == 2 && self.onQuickLaunch) {
-        self.onQuickLaunch(@"vn.vietmap.live");
-    }
-}
-
-- (void)dismissTap { if (self.onDismiss) self.onDismiss(); }
-- (void)exitAppTap { exit(0); }
+- (void)modeTap:(UIButton *)sender { if (self.onPickMode) self.onPickMode((SidePlaySplitMode)sender.tag); }
+- (void)quickTap { if (self.onQuickPreset) self.onQuickPreset(); }
+- (void)closeModal { if (self.onClose) self.onClose(); }
+- (void)exitTap { exit(0); }
 
 @end
 
-#pragma mark - Luoi Chon App Tren Dien Thoai ("Chon app o 1")
+#pragma mark - Luoi "Chon app o 1 / 2" (5 cot giong het anh 4)
 
-@interface AppPickerGridView : UIView <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
-@property (nonatomic, copy) NSString *titleText;
+@interface AppGridPickerView : UIView <UICollectionViewDataSource, UICollectionViewDelegateFlowLayout>
+@property (nonatomic, copy) NSString *headerTitle;
 @property (nonatomic, strong) NSArray<InstalledAppItem *> *apps;
-@property (nonatomic, copy) void (^onPick)(InstalledAppItem *app);
+@property (nonatomic, copy) void (^onSelect)(InstalledAppItem *app);
 @property (nonatomic, copy) void (^onClose)(void);
 - (instancetype)initWithTitle:(NSString *)title apps:(NSArray<InstalledAppItem *> *)apps;
 @end
 
-@implementation AppPickerGridView
+@implementation AppGridPickerView
 
 - (instancetype)initWithTitle:(NSString *)title apps:(NSArray<InstalledAppItem *> *)apps {
     self = [super initWithFrame:CGRectZero];
     if (self) {
-        self.titleText = title;
+        self.headerTitle = title;
         self.apps = apps;
         self.backgroundColor = [UIColor systemBackgroundColor];
-        self.layer.cornerRadius = 20;
-        self.layer.borderWidth = 2.0;
-        self.layer.borderColor = [UIColor systemGray3Color].CGColor;
+        self.layer.cornerRadius = 18;
         self.clipsToBounds = YES;
-        [self setup];
+        [self setupGrid];
     }
     return self;
 }
 
-- (void)setup {
+- (void)setupGrid {
     UILabel *lbl = [[UILabel alloc] init];
-    lbl.text = self.titleText;
-    lbl.font = [UIFont boldSystemFontOfSize:16];
+    lbl.text = self.headerTitle;
+    lbl.font = [UIFont boldSystemFontOfSize:15];
     lbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
-    [close setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
-    close.tintColor = [UIColor secondaryLabelColor];
-    close.translatesAutoresizingMaskIntoConstraints = NO;
-    [close addTarget:self action:@selector(closeTap) forControlEvents:UIControlEventTouchUpInside];
+    UIButton *xBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [xBtn setImage:[UIImage systemImageNamed:@"xmark"] forState:UIControlStateNormal];
+    xBtn.tintColor = [UIColor labelColor];
+    xBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    [xBtn addTarget:self action:@selector(closeTap) forControlEvents:UIControlEventTouchUpInside];
 
-    UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
-    layout.minimumLineSpacing = 12;
-    layout.minimumInteritemSpacing = 4;
-    layout.sectionInset = UIEdgeInsetsMake(8, 10, 14, 10);
+    UICollectionViewFlowLayout *fl = [[UICollectionViewFlowLayout alloc] init];
+    fl.minimumLineSpacing = 12;
+    fl.minimumInteritemSpacing = 4;
+    fl.sectionInset = UIEdgeInsetsMake(6, 10, 14, 10);
 
-    UICollectionView *cv = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:layout];
+    UICollectionView *cv = [[UICollectionView alloc] initWithFrame:CGRectZero collectionViewLayout:fl];
     cv.backgroundColor = [UIColor clearColor];
     cv.dataSource = self;
     cv.delegate = self;
-    [cv registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"Cell"];
+    [cv registerClass:[UICollectionViewCell class] forCellWithReuseIdentifier:@"AppCell"];
     cv.translatesAutoresizingMaskIntoConstraints = NO;
 
     [self addSubview:lbl];
-    [self addSubview:close];
+    [self addSubview:xBtn];
     [self addSubview:cv];
 
     [NSLayoutConstraint activateConstraints:@[
         [lbl.topAnchor constraintEqualToAnchor:self.topAnchor constant:14],
         [lbl.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:16],
-        [close.centerYAnchor constraintEqualToAnchor:lbl.centerYAnchor],
-        [close.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
-        [cv.topAnchor constraintEqualToAnchor:lbl.bottomAnchor constant:6],
+        [xBtn.centerYAnchor constraintEqualToAnchor:lbl.centerYAnchor],
+        [xBtn.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-14],
+        [cv.topAnchor constraintEqualToAnchor:lbl.bottomAnchor constant:8],
         [cv.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
         [cv.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
         [cv.bottomAnchor constraintEqualToAnchor:self.bottomAnchor]
@@ -651,452 +696,597 @@ typedef NS_ENUM(NSInteger, SplitLayoutMode) {
 - (NSInteger)collectionView:(UICollectionView *)cv numberOfItemsInSection:(NSInteger)s { return self.apps.count; }
 
 - (__kindof UICollectionViewCell *)collectionView:(UICollectionView *)cv cellForItemAtIndexPath:(NSIndexPath *)ip {
-    UICollectionViewCell *cell = [cv dequeueReusableCellWithReuseIdentifier:@"Cell" forIndexPath:ip];
+    UICollectionViewCell *cell = [cv dequeueReusableCellWithReuseIdentifier:@"AppCell" forIndexPath:ip];
     for (UIView *v in cell.contentView.subviews) [v removeFromSuperview];
     InstalledAppItem *app = self.apps[ip.item];
 
     UIImageView *iv = [[UIImageView alloc] initWithImage:app.icon];
-    iv.layer.cornerRadius = 12;
+    iv.layer.cornerRadius = 11;
     iv.clipsToBounds = YES;
     iv.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UILabel *t = [[UILabel alloc] init];
-    t.text = app.name;
-    t.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-    t.textAlignment = NSTextAlignmentCenter;
-    t.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *name = [[UILabel alloc] init];
+    name.text = app.name;
+    name.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightMedium];
+    name.textAlignment = NSTextAlignmentCenter;
+    name.translatesAutoresizingMaskIntoConstraints = NO;
 
     [cell.contentView addSubview:iv];
-    [cell.contentView addSubview:t];
+    [cell.contentView addSubview:name];
     [NSLayoutConstraint activateConstraints:@[
         [iv.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:2],
         [iv.centerXAnchor constraintEqualToAnchor:cell.contentView.centerXAnchor],
-        [iv.widthAnchor constraintEqualToConstant:46],
-        [iv.heightAnchor constraintEqualToConstant:46],
-        [t.topAnchor constraintEqualToAnchor:iv.bottomAnchor constant:4],
-        [t.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:2],
-        [t.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-2]
+        [iv.widthAnchor constraintEqualToConstant:44],
+        [iv.heightAnchor constraintEqualToConstant:44],
+        [name.topAnchor constraintEqualToAnchor:iv.bottomAnchor constant:4],
+        [name.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:1],
+        [name.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-1]
     ]];
     return cell;
 }
 
 - (CGSize)collectionView:(UICollectionView *)cv layout:(UICollectionViewLayout *)l sizeForItemAtIndexPath:(NSIndexPath *)ip {
-    CGFloat w = floor((cv.bounds.size.width - 40) / 5.0);
-    return CGSizeMake(MAX(w, 50), 68);
+    CGFloat w = floor((cv.bounds.size.width - 38) / 5.0);
+    return CGSizeMake(MAX(w, 48), 66);
 }
 
 - (void)collectionView:(UICollectionView *)cv didSelectItemAtIndexPath:(NSIndexPath *)ip {
-    if (self.onPick) self.onPick(self.apps[ip.item]);
+    if (self.onSelect) self.onSelect(self.apps[ip.item]);
 }
+
 @end
 
-#pragma mark - Man Hinh Chinh "Mo phong" & "Tren xe"
+#pragma mark - Tab 3: Man Hinh "Mo phong" (Giong het anh 2, 4, 5, 6)
 
-@interface MultiWindowWorkspaceViewController : UIViewController <AppWindowPaneDelegate, CLLocationManagerDelegate>
-@property (nonatomic, assign) BOOL isCarScreen;
-@property (nonatomic, assign) SplitLayoutMode layoutMode;
-@property (nonatomic, strong) UIView *stageContainer;
-@property (nonatomic, strong) NSMutableArray<AppWindowPane *> *panes;
-@property (nonatomic, strong) UIView *dividerView;
-@property (nonatomic, strong) NSLayoutConstraint *pane0WidthConstraint;
+@interface SimulationViewController : UIViewController <MultiTaskPaneDelegate, CLLocationManagerDelegate>
+@property (nonatomic, assign) BOOL isCarPlayWindow;
+@property (nonatomic, assign) SidePlaySplitMode splitMode;
+@property (nonatomic, strong) UIView *outerFrame;
+@property (nonatomic, strong) NSMutableArray<MultiTaskPaneView *> *panes;
+@property (nonatomic, strong) UIView *centerDivider;
+@property (nonatomic, strong) UIView *centerPillThumb;
+@property (nonatomic, strong) NSLayoutConstraint *pane1WidthConstraint;
 @property (nonatomic, assign) CGFloat splitRatio;
-@property (nonatomic, strong) UIView *activeModalOverlay;
-@property (nonatomic, strong) NSArray<InstalledAppItem *> *allApps;
+@property (nonatomic, strong) UIView *overlayModal;
+@property (nonatomic, strong) NSArray<InstalledAppItem *> *deviceApps;
 
-// Widget HUD goc duoi o 1 (Gio + Pin + Toc do + Bien bao 50)
-@property (nonatomic, strong) UIView *hudCard;
-@property (nonatomic, strong) UILabel *timeLabel;
-@property (nonatomic, strong) UILabel *batteryLabel;
-@property (nonatomic, strong) UILabel *speedLabel;
-@property (nonatomic, strong) CLLocationManager *locationManager;
+// Bong bong toc do goc duoi ben trai o 1
+@property (nonatomic, strong) UIView *speedCard;
+@property (nonatomic, strong) UILabel *clockLbl;
+@property (nonatomic, strong) UILabel *batLbl;
+@property (nonatomic, strong) UILabel *speedValueLbl;
+@property (nonatomic, strong) UIView *limitCircle;
+@property (nonatomic, strong) UILabel *limitValueLbl;
+@property (nonatomic, strong) CLLocationManager *locMgr;
 @end
 
-@implementation MultiWindowWorkspaceViewController
+@implementation SimulationViewController
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.allApps = GetInstalledApps();
-    self.layoutMode = SplitLayoutDual;
+    self.view.backgroundColor = [UIColor colorWithRed:0.95 green:0.96 blue:0.97 alpha:1.0];
+    self.deviceApps = ScanDeviceApps();
+    self.splitMode = SidePlaySplitDual;
     self.splitRatio = 0.5;
     self.panes = [NSMutableArray array];
 
-    UILabel *headerTitle = [[UILabel alloc] init];
-    headerTitle.text = self.isCarScreen ? @"Trên xe" : @"Mô phỏng";
-    headerTitle.font = [UIFont systemFontOfSize:32 weight:UIFontWeightBold];
-    headerTitle.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:headerTitle];
+    UILabel *bigTitle = [[UILabel alloc] init];
+    bigTitle.text = @"Mô phỏng";
+    bigTitle.font = [UIFont systemFontOfSize:34 weight:UIFontWeightBold];
+    bigTitle.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:bigTitle];
 
-    UIButton *layoutBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [layoutBtn setImage:[UIImage systemImageNamed:@"rectangle.split.2x1.fill"] forState:UIControlStateNormal];
-    layoutBtn.backgroundColor = [UIColor secondarySystemGroupedBackgroundColor];
-    layoutBtn.layer.cornerRadius = 10;
-    layoutBtn.translatesAutoresizingMaskIntoConstraints = NO;
-    [layoutBtn addTarget:self action:@selector(openLayoutSheet) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:layoutBtn];
+    self.outerFrame = [[UIView alloc] init];
+    self.outerFrame.backgroundColor = [UIColor colorWithRed:0.96 green:0.97 blue:0.98 alpha:1.0];
+    self.outerFrame.layer.cornerRadius = 18;
+    self.outerFrame.layer.borderWidth = 2.0;
+    self.outerFrame.layer.borderColor = [UIColor colorWithWhite:0.84 alpha:1.0].CGColor;
+    self.outerFrame.clipsToBounds = YES;
+    self.outerFrame.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.outerFrame];
 
-    self.stageContainer = [[UIView alloc] init];
-    self.stageContainer.backgroundColor = [UIColor systemBackgroundColor];
-    self.stageContainer.layer.cornerRadius = 20;
-    self.stageContainer.layer.borderWidth = 2.0;
-    self.stageContainer.layer.borderColor = [UIColor systemGray3Color].CGColor;
-    self.stageContainer.clipsToBounds = YES;
-    self.stageContainer.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:self.stageContainer];
+    if (self.isCarPlayWindow) {
+        bigTitle.hidden = YES;
+        [NSLayoutConstraint activateConstraints:@[
+            [self.outerFrame.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:4],
+            [self.outerFrame.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-4],
+            [self.outerFrame.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:4],
+            [self.outerFrame.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-4]
+        ]];
+    } else {
+        [NSLayoutConstraint activateConstraints:@[
+            [bigTitle.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],
+            [bigTitle.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
 
-    [NSLayoutConstraint activateConstraints:@[
-        [headerTitle.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:8],
-        [headerTitle.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-
-        [layoutBtn.centerYAnchor constraintEqualToAnchor:headerTitle.centerYAnchor],
-        [layoutBtn.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
-        [layoutBtn.widthAnchor constraintEqualToConstant:40],
-        [layoutBtn.heightAnchor constraintEqualToConstant:32],
-
-        [self.stageContainer.topAnchor constraintEqualToAnchor:headerTitle.bottomAnchor constant:12],
-        [self.stageContainer.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:14],
-        [self.stageContainer.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-14],
-        [self.stageContainer.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.55]
-    ]];
+            [self.outerFrame.topAnchor constraintEqualToAnchor:bigTitle.bottomAnchor constant:14],
+            [self.outerFrame.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+            [self.outerFrame.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+            [self.outerFrame.heightAnchor constraintEqualToAnchor:self.view.heightAnchor multiplier:0.50]
+        ]];
+    }
 
     for (NSInteger i = 1; i <= 4; i++) {
-        AppWindowPane *p = [[AppWindowPane alloc] initWithSlotIndex:i];
+        MultiTaskPaneView *p = [[MultiTaskPaneView alloc] initWithPaneNumber:i];
         p.delegate = self;
         p.translatesAutoresizingMaskIntoConstraints = NO;
         [self.panes addObject:p];
     }
 
-    self.dividerView = [[UIView alloc] init];
-    self.dividerView.backgroundColor = [UIColor systemGray5Color];
-    self.dividerView.translatesAutoresizingMaskIntoConstraints = NO;
-    UIImageView *grip = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"line.3.horizontal"]];
-    grip.tintColor = [UIColor systemGrayColor];
-    grip.transform = CGAffineTransformMakeRotation(M_PI_2);
-    grip.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.dividerView addSubview:grip];
+    self.centerDivider = [[UIView alloc] init];
+    self.centerDivider.backgroundColor = [UIColor colorWithWhite:0.86 alpha:1.0];
+    self.centerDivider.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.centerPillThumb = [[UIView alloc] init];
+    self.centerPillThumb.backgroundColor = [UIColor whiteColor];
+    self.centerPillThumb.layer.cornerRadius = 6;
+    self.centerPillThumb.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.centerPillThumb.layer.shadowOpacity = 0.18;
+    self.centerPillThumb.layer.shadowRadius = 3;
+    self.centerPillThumb.translatesAutoresizingMaskIntoConstraints = NO;
+
+    UILabel *gripDots = [[UILabel alloc] init];
+    gripDots.text = @"☰";
+    gripDots.font = [UIFont systemFontOfSize:8];
+    gripDots.textColor = [UIColor grayColor];
+    gripDots.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.centerPillThumb addSubview:gripDots];
+    [self.centerDivider addSubview:self.centerPillThumb];
+
     [NSLayoutConstraint activateConstraints:@[
-        [grip.centerXAnchor constraintEqualToAnchor:self.dividerView.centerXAnchor],
-        [grip.centerYAnchor constraintEqualToAnchor:self.dividerView.centerYAnchor],
-        [grip.widthAnchor constraintEqualToConstant:14],
-        [grip.heightAnchor constraintEqualToConstant:14]
+        [self.centerPillThumb.centerXAnchor constraintEqualToAnchor:self.centerDivider.centerXAnchor],
+        [self.centerPillThumb.centerYAnchor constraintEqualToAnchor:self.centerDivider.centerYAnchor],
+        [self.centerPillThumb.widthAnchor constraintEqualToConstant:12],
+        [self.centerPillThumb.heightAnchor constraintEqualToConstant:36],
+        [gripDots.centerXAnchor constraintEqualToAnchor:self.centerPillThumb.centerXAnchor],
+        [gripDots.centerYAnchor constraintEqualToAnchor:self.centerPillThumb.centerYAnchor]
     ]];
-    [self.dividerView addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPanDivider:)]];
 
-    [self applySplitLayout:SplitLayoutDual];
-    [self setupHUD];
-    [self assignInitialApps];
+    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleDividerDrag:)];
+    [self.centerDivider addGestureRecognizer:pan];
+
+    [self rebuildWorkspaceLayout:SidePlaySplitDual];
+    [self buildSpeedWidget];
 }
 
-- (void)assignInitialApps {
-    InstalledAppItem *yt = [self appByBundle:@"com.google.ios.youtube"] ?: self.allApps.firstObject;
-    InstalledAppItem *vm = [self appByBundle:@"vn.vietmap.live"] ?: (self.allApps.count > 1 ? self.allApps[1] : yt);
-    InstalledAppItem *gm = [self appByBundle:@"com.google.Maps"] ?: yt;
-    InstalledAppItem *zm = [self appByBundle:@"com.zing.mp3"] ?: vm;
-
-    [self.panes[0] hostApplication:yt];
-    [self.panes[1] hostApplication:vm];
-    [self.panes[2] hostApplication:gm];
-    [self.panes[3] hostApplication:zm];
-}
-
-- (InstalledAppItem *)appByBundle:(NSString *)bid {
-    for (InstalledAppItem *item in self.allApps) {
-        if ([item.bundleID isEqualToString:bid]) return item;
-    }
-    return nil;
-}
-
-- (void)applySplitLayout:(SplitLayoutMode)mode {
-    self.layoutMode = mode;
-    for (UIView *sub in self.stageContainer.subviews) {
-        if (sub != self.hudCard) [sub removeFromSuperview];
+- (void)rebuildWorkspaceLayout:(SidePlaySplitMode)mode {
+    self.splitMode = mode;
+    for (UIView *sub in self.outerFrame.subviews) {
+        if (sub != self.speedCard) [sub removeFromSuperview];
     }
 
-    AppWindowPane *p0 = self.panes[0];
-    AppWindowPane *p1 = self.panes[1];
-    AppWindowPane *p2 = self.panes[2];
-    AppWindowPane *p3 = self.panes[3];
+    MultiTaskPaneView *p1 = self.panes[0];
+    MultiTaskPaneView *p2 = self.panes[1];
 
-    if (mode == SplitLayoutSingle) {
-        [self.stageContainer addSubview:p0];
+    if (mode == SidePlaySplitSingle) {
+        [self.outerFrame addSubview:p1];
         [NSLayoutConstraint activateConstraints:@[
-            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-            [p0.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
+            [p1.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor],
+            [p1.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor],
+            [p1.leadingAnchor constraintEqualToAnchor:self.outerFrame.leadingAnchor],
+            [p1.trailingAnchor constraintEqualToAnchor:self.outerFrame.trailingAnchor]
         ]];
-    } else if (mode == SplitLayoutDual) {
-        [self.stageContainer addSubview:p0];
-        [self.stageContainer addSubview:self.dividerView];
-        [self.stageContainer addSubview:p1];
-        self.pane0WidthConstraint = [p0.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:self.splitRatio constant:-6];
+    } else if (mode == SidePlaySplitDual) {
+        [self.outerFrame addSubview:p1];
+        [self.outerFrame addSubview:p2];
+        [self.outerFrame addSubview:self.centerDivider];
+
+        self.pane1WidthConstraint = [p1.widthAnchor constraintEqualToAnchor:self.outerFrame.widthAnchor multiplier:self.splitRatio constant:-1];
         [NSLayoutConstraint activateConstraints:@[
-            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-            self.pane0WidthConstraint,
+            [p1.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor],
+            [p1.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor],
+            [p1.leadingAnchor constraintEqualToAnchor:self.outerFrame.leadingAnchor],
+            self.pane1WidthConstraint,
 
-            [self.dividerView.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [self.dividerView.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [self.dividerView.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor],
-            [self.dividerView.widthAnchor constraintEqualToConstant:12],
+            [self.centerDivider.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor],
+            [self.centerDivider.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor],
+            [self.centerDivider.leadingAnchor constraintEqualToAnchor:p1.trailingAnchor],
+            [self.centerDivider.widthAnchor constraintEqualToConstant:2],
 
-            [p1.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p1.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [p1.leadingAnchor constraintEqualToAnchor:self.dividerView.trailingAnchor],
-            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
+            [p2.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor],
+            [p2.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor],
+            [p2.leadingAnchor constraintEqualToAnchor:self.centerDivider.trailingAnchor],
+            [p2.trailingAnchor constraintEqualToAnchor:self.outerFrame.trailingAnchor]
         ]];
-    } else if (mode == SplitLayoutTriple || mode == SplitLayoutQuad) {
-        NSInteger count = (mode == SplitLayoutTriple) ? 3 : 4;
-        UIStackView *stack = [[UIStackView alloc] init];
-        stack.axis = UILayoutConstraintAxisHorizontal;
-        stack.distribution = UIStackViewDistributionFillEqually;
-        stack.spacing = 2;
-        stack.backgroundColor = [UIColor systemGray4Color];
-        stack.translatesAutoresizingMaskIntoConstraints = NO;
-        for (NSInteger i = 0; i < count; i++) [stack addArrangedSubview:self.panes[i]];
-        [self.stageContainer addSubview:stack];
+    } else {
+        NSInteger cnt = (mode == SidePlaySplitTriple) ? 3 : 4;
+        UIStackView *st = [[UIStackView alloc] init];
+        st.distribution = UIStackViewDistributionFillEqually;
+        st.spacing = 2;
+        st.translatesAutoresizingMaskIntoConstraints = NO;
+        for (NSInteger i = 0; i < cnt; i++) [st addArrangedSubview:self.panes[i]];
+        [self.outerFrame addSubview:st];
         [NSLayoutConstraint activateConstraints:@[
-            [stack.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [stack.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [stack.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-            [stack.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor]
-        ]];
-    } else if (mode == SplitLayoutGrid3) {
-        [self.stageContainer addSubview:p0];
-        [self.stageContainer addSubview:p1];
-        [self.stageContainer addSubview:p2];
-        [NSLayoutConstraint activateConstraints:@[
-            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-            [p0.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:0.5],
-
-            [p1.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p1.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor constant:2],
-            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
-            [p1.heightAnchor constraintEqualToAnchor:self.stageContainer.heightAnchor multiplier:0.5],
-
-            [p2.topAnchor constraintEqualToAnchor:p1.bottomAnchor constant:2],
-            [p2.leadingAnchor constraintEqualToAnchor:p0.trailingAnchor constant:2],
-            [p2.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
-            [p2.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor]
-        ]];
-    } else if (mode == SplitLayoutPiP) {
-        [self.stageContainer addSubview:p0];
-        p1.layer.cornerRadius = 14;
-        p1.layer.borderWidth = 1.5;
-        p1.layer.borderColor = [UIColor systemGray3Color].CGColor;
-        [self.stageContainer addSubview:p1];
-        [NSLayoutConstraint activateConstraints:@[
-            [p0.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-            [p0.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor],
-            [p0.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-            [p0.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
-
-            [p1.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor constant:-12],
-            [p1.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor constant:-16],
-            [p1.widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:0.46],
-            [p1.heightAnchor constraintEqualToAnchor:self.stageContainer.heightAnchor multiplier:0.45]
+            [st.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor],
+            [st.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor],
+            [st.leadingAnchor constraintEqualToAnchor:self.outerFrame.leadingAnchor],
+            [st.trailingAnchor constraintEqualToAnchor:self.outerFrame.trailingAnchor]
         ]];
     }
 
-    if (self.hudCard) {
-        [self.stageContainer bringSubviewToFront:self.hudCard];
-    }
+    if (self.speedCard) [self.outerFrame bringSubviewToFront:self.speedCard];
 }
 
-- (void)setupHUD {
-    self.hudCard = [[UIView alloc] init];
-    self.hudCard.backgroundColor = [[UIColor systemBackgroundColor] colorWithAlphaComponent:0.95];
-    self.hudCard.layer.cornerRadius = 16;
-    self.hudCard.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.hudCard.layer.shadowOpacity = 0.16;
-    self.hudCard.layer.shadowRadius = 6;
-    self.hudCard.layer.shadowOffset = CGSizeMake(0, 2);
-    self.hudCard.translatesAutoresizingMaskIntoConstraints = NO;
+- (void)buildSpeedWidget {
+    self.speedCard = [[UIView alloc] init];
+    self.speedCard.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.96];
+    self.speedCard.layer.cornerRadius = 16;
+    self.speedCard.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.speedCard.layer.shadowOpacity = 0.14;
+    self.speedCard.layer.shadowRadius = 8;
+    self.speedCard.layer.shadowOffset = CGSizeMake(0, 3);
+    self.speedCard.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.timeLabel = [[UILabel alloc] init];
-    self.timeLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-    self.timeLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.clockLbl = [[UILabel alloc] init];
+    self.clockLbl.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightSemibold];
+    self.clockLbl.textColor = [UIColor blackColor];
+    self.clockLbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.batteryLabel = [[UILabel alloc] init];
-    self.batteryLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
-    self.batteryLabel.textAlignment = NSTextAlignmentRight;
-    self.batteryLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.batLbl = [[UILabel alloc] init];
+    self.batLbl.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightSemibold];
+    self.batLbl.textColor = [UIColor blackColor];
+    self.batLbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.speedLabel = [[UILabel alloc] init];
-    self.speedLabel.text = @"0";
-    self.speedLabel.font = [UIFont monospacedDigitSystemFontOfSize:26 weight:UIFontWeightBold];
-    self.speedLabel.textAlignment = NSTextAlignmentCenter;
-    self.speedLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    self.speedValueLbl = [[UILabel alloc] init];
+    self.speedValueLbl.text = @"--";
+    self.speedValueLbl.font = [UIFont monospacedDigitSystemFontOfSize:22 weight:UIFontWeightBold];
+    self.speedValueLbl.textColor = [UIColor darkGrayColor];
+    self.speedValueLbl.textAlignment = NSTextAlignmentCenter;
+    self.speedValueLbl.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UILabel *unitLbl = [[UILabel alloc] init];
-    unitLbl.text = @"km/h";
-    unitLbl.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
-    unitLbl.textColor = [UIColor secondaryLabelColor];
-    unitLbl.translatesAutoresizingMaskIntoConstraints = NO;
+    UILabel *kmh = [[UILabel alloc] init];
+    kmh.text = @"km/h";
+    kmh.font = [UIFont systemFontOfSize:10 weight:UIFontWeightMedium];
+    kmh.textColor = [UIColor grayColor];
+    kmh.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UIView *sign = [[UIView alloc] init];
-    sign.backgroundColor = [UIColor whiteColor];
-    sign.layer.cornerRadius = 21;
-    sign.layer.borderWidth = 4.0;
-    sign.layer.borderColor = [UIColor systemRedColor].CGColor;
-    sign.translatesAutoresizingMaskIntoConstraints = NO;
+    self.limitCircle = [[UIView alloc] init];
+    self.limitCircle.backgroundColor = [UIColor whiteColor];
+    self.limitCircle.layer.cornerRadius = 20;
+    self.limitCircle.layer.borderWidth = 2.0;
+    self.limitCircle.layer.borderColor = [UIColor grayColor].CGColor;
+    self.limitCircle.translatesAutoresizingMaskIntoConstraints = NO;
 
-    UILabel *signNum = [[UILabel alloc] init];
-    signNum.text = @"50";
-    signNum.textColor = [UIColor blackColor];
-    signNum.font = [UIFont systemFontOfSize:16 weight:UIFontWeightHeavy];
-    signNum.translatesAutoresizingMaskIntoConstraints = NO;
-    [sign addSubview:signNum];
+    self.limitValueLbl = [[UILabel alloc] init];
+    self.limitValueLbl.text = @"--";
+    self.limitValueLbl.font = [UIFont boldSystemFontOfSize:14];
+    self.limitValueLbl.textColor = [UIColor darkGrayColor];
+    self.limitValueLbl.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.limitCircle addSubview:self.limitValueLbl];
 
-    [self.hudCard addSubview:self.timeLabel];
-    [self.hudCard addSubview:self.batteryLabel];
-    [self.hudCard addSubview:self.speedLabel];
-    [self.hudCard addSubview:unitLbl];
-    [self.hudCard addSubview:sign];
-    [self.stageContainer addSubview:self.hudCard];
+    [self.speedCard addSubview:self.clockLbl];
+    [self.speedCard addSubview:self.batLbl];
+    [self.speedCard addSubview:self.speedValueLbl];
+    [self.speedCard addSubview:kmh];
+    [self.speedCard addSubview:self.limitCircle];
+    [self.outerFrame addSubview:self.speedCard];
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.hudCard.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor constant:10],
-        [self.hudCard.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor constant:-18],
-        [self.hudCard.widthAnchor constraintEqualToConstant:118],
-        [self.hudCard.heightAnchor constraintEqualToConstant:78],
+        [self.speedCard.leadingAnchor constraintEqualToAnchor:self.outerFrame.leadingAnchor constant:8],
+        [self.speedCard.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor constant:-10],
+        [self.speedCard.widthAnchor constraintEqualToConstant:114],
+        [self.speedCard.heightAnchor constraintEqualToConstant:76],
 
-        [self.timeLabel.topAnchor constraintEqualToAnchor:self.hudCard.topAnchor constant:6],
-        [self.timeLabel.leadingAnchor constraintEqualToAnchor:self.hudCard.leadingAnchor constant:10],
-        [self.batteryLabel.topAnchor constraintEqualToAnchor:self.hudCard.topAnchor constant:6],
-        [self.batteryLabel.trailingAnchor constraintEqualToAnchor:self.hudCard.trailingAnchor constant:-10],
+        [self.clockLbl.topAnchor constraintEqualToAnchor:self.speedCard.topAnchor constant:6],
+        [self.clockLbl.leadingAnchor constraintEqualToAnchor:self.speedCard.leadingAnchor constant:10],
 
-        [self.speedLabel.topAnchor constraintEqualToAnchor:self.timeLabel.bottomAnchor constant:2],
-        [self.speedLabel.leadingAnchor constraintEqualToAnchor:self.hudCard.leadingAnchor constant:8],
-        [self.speedLabel.widthAnchor constraintEqualToConstant:48],
-        [unitLbl.topAnchor constraintEqualToAnchor:self.speedLabel.bottomAnchor constant:-2],
-        [unitLbl.centerXAnchor constraintEqualToAnchor:self.speedLabel.centerXAnchor],
+        [self.batLbl.topAnchor constraintEqualToAnchor:self.speedCard.topAnchor constant:6],
+        [self.batLbl.trailingAnchor constraintEqualToAnchor:self.speedCard.trailingAnchor constant:-10],
 
-        [sign.trailingAnchor constraintEqualToAnchor:self.hudCard.trailingAnchor constant:-10],
-        [sign.bottomAnchor constraintEqualToAnchor:self.hudCard.bottomAnchor constant:-10],
-        [sign.widthAnchor constraintEqualToConstant:42],
-        [sign.heightAnchor constraintEqualToConstant:42],
-        [signNum.centerXAnchor constraintEqualToAnchor:sign.centerXAnchor],
-        [signNum.centerYAnchor constraintEqualToAnchor:sign.centerYAnchor]
+        [self.speedValueLbl.topAnchor constraintEqualToAnchor:self.clockLbl.bottomAnchor constant:6],
+        [self.speedValueLbl.leadingAnchor constraintEqualToAnchor:self.speedCard.leadingAnchor constant:8],
+        [self.speedValueLbl.widthAnchor constraintEqualToConstant:44],
+
+        [kmh.topAnchor constraintEqualToAnchor:self.speedValueLbl.bottomAnchor constant:0],
+        [kmh.centerXAnchor constraintEqualToAnchor:self.speedValueLbl.centerXAnchor],
+
+        [self.limitCircle.trailingAnchor constraintEqualToAnchor:self.speedCard.trailingAnchor constant:-10],
+        [self.limitCircle.bottomAnchor constraintEqualToAnchor:self.speedCard.bottomAnchor constant:-10],
+        [self.limitCircle.widthAnchor constraintEqualToConstant:40],
+        [self.limitCircle.heightAnchor constraintEqualToConstant:40],
+
+        [self.limitValueLbl.centerXAnchor constraintEqualToAnchor:self.limitCircle.centerXAnchor],
+        [self.limitValueLbl.centerYAnchor constraintEqualToAnchor:self.limitCircle.centerYAnchor]
     ]];
 
     [UIDevice currentDevice].batteryMonitoringEnabled = YES;
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-    fmt.dateFormat = @"HH:mm";
-    self.timeLabel.text = [fmt stringFromDate:[NSDate date]];
-    float bat = [UIDevice currentDevice].batteryLevel;
-    self.batteryLabel.text = [NSString stringWithFormat:@"%d%%", (bat >= 0) ? (int)round(bat * 100) : 95];
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"HH:mm";
+    self.clockLbl.text = [df stringFromDate:[NSDate date]];
+    float b = [UIDevice currentDevice].batteryLevel;
+    self.batLbl.text = [NSString stringWithFormat:@"%d%% 🔋", (b >= 0) ? (int)round(b * 100) : 95];
 
-    self.locationManager = [[CLLocationManager alloc] init];
-    self.locationManager.delegate = self;
-    self.locationManager.desiredAccuracy = kCLLocationAccuracyBestForNavigation;
-    [self.locationManager requestWhenInUseAuthorization];
-    [self.locationManager startUpdatingLocation];
-}
-
-- (void)onPanDivider:(UIPanGestureRecognizer *)pan {
-    if (self.layoutMode != SplitLayoutDual) return;
-    CGPoint pt = [pan locationInView:self.stageContainer];
-    CGFloat ratio = MIN(MAX(pt.x / MAX(self.stageContainer.bounds.size.width, 1.0), 0.25), 0.75);
-    self.splitRatio = ratio;
-    self.pane0WidthConstraint.active = NO;
-    self.pane0WidthConstraint = [self.panes[0].widthAnchor constraintEqualToAnchor:self.stageContainer.widthAnchor multiplier:ratio constant:-6];
-    self.pane0WidthConstraint.active = YES;
+    self.locMgr = [[CLLocationManager alloc] init];
+    self.locMgr.delegate = self;
+    self.locMgr.desiredAccuracy = kCLLocationAccuracyBestForNavigation;
+    [self.locMgr requestWhenInUseAuthorization];
+    [self.locMgr startUpdatingLocation];
 }
 
 - (void)locationManager:(CLLocationManager *)manager didUpdateLocations:(NSArray<CLLocation *> *)locations {
     CLLocation *loc = locations.lastObject;
-    if (loc && loc.speed >= 0) {
-        self.speedLabel.text = [NSString stringWithFormat:@"%d", (int)round(loc.speed * 3.6)];
+    if (loc) {
+        int kmh = (loc.speed >= 0) ? (int)round(loc.speed * 3.6) : 0;
+        self.speedValueLbl.text = [NSString stringWithFormat:@"%d", kmh];
+        self.speedValueLbl.textColor = [UIColor blackColor];
+        self.limitCircle.layer.borderWidth = 3.5;
+        self.limitCircle.layer.borderColor = [UIColor systemRedColor].CGColor;
+        self.limitValueLbl.text = @"50";
+        self.limitValueLbl.textColor = [UIColor blackColor];
     }
 }
 
-#pragma mark - AppWindowPaneDelegate & Modals
-
-- (void)presentOverlayCard:(UIView *)card {
-    [self.activeModalOverlay removeFromSuperview];
-    card.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.view addSubview:card];
-    [NSLayoutConstraint activateConstraints:@[
-        [card.topAnchor constraintEqualToAnchor:self.stageContainer.topAnchor],
-        [card.leadingAnchor constraintEqualToAnchor:self.stageContainer.leadingAnchor],
-        [card.trailingAnchor constraintEqualToAnchor:self.stageContainer.trailingAnchor],
-        [card.bottomAnchor constraintEqualToAnchor:self.stageContainer.bottomAnchor]
-    ]];
-    self.activeModalOverlay = card;
+- (void)handleDividerDrag:(UIPanGestureRecognizer *)pan {
+    if (self.splitMode != SidePlaySplitDual) return;
+    CGPoint pt = [pan locationInView:self.outerFrame];
+    CGFloat r = MIN(MAX(pt.x / MAX(self.outerFrame.bounds.size.width, 1.0), 0.25), 0.75);
+    self.splitRatio = r;
+    self.pane1WidthConstraint.active = NO;
+    self.pane1WidthConstraint = [self.panes[0].widthAnchor constraintEqualToAnchor:self.outerFrame.widthAnchor multiplier:r constant:-1];
+    self.pane1WidthConstraint.active = YES;
 }
 
-- (void)windowPaneDidTapTitle:(AppWindowPane *)pane {
-    self.allApps = GetInstalledApps();
-    NSString *title = [NSString stringWithFormat:@"Chọn app ô %ld", (long)pane.slotIndex];
-    AppPickerGridView *picker = [[AppPickerGridView alloc] initWithTitle:title apps:self.allApps];
+- (void)showOverlay:(UIView *)modal {
+    [self.overlayModal removeFromSuperview];
+    modal.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.outerFrame addSubview:modal];
+    [NSLayoutConstraint activateConstraints:@[
+        [modal.topAnchor constraintEqualToAnchor:self.outerFrame.topAnchor constant:6],
+        [modal.bottomAnchor constraintEqualToAnchor:self.outerFrame.bottomAnchor constant:-6],
+        [modal.leadingAnchor constraintEqualToAnchor:self.outerFrame.leadingAnchor constant:6],
+        [modal.trailingAnchor constraintEqualToAnchor:self.outerFrame.trailingAnchor constant:-6]
+    ]];
+    self.overlayModal = modal;
+}
+
+- (void)paneDidRequestAppPicker:(MultiTaskPaneView *)pane {
+    self.deviceApps = ScanDeviceApps();
+    NSString *title = [NSString stringWithFormat:@"Chọn app ô %ld", (long)pane.paneNumber];
+    AppGridPickerView *picker = [[AppGridPickerView alloc] initWithTitle:title apps:self.deviceApps];
     __weak typeof(self) weakSelf = self;
     picker.onClose = ^{
-        [weakSelf.activeModalOverlay removeFromSuperview];
-        weakSelf.activeModalOverlay = nil;
+        [weakSelf.overlayModal removeFromSuperview];
+        weakSelf.overlayModal = nil;
     };
-    picker.onPick = ^(InstalledAppItem *app) {
-        [pane hostApplication:app];
-        [weakSelf.activeModalOverlay removeFromSuperview];
-        weakSelf.activeModalOverlay = nil;
+    picker.onSelect = ^(InstalledAppItem *app) {
+        [pane openAppInPane:app];
+        [weakSelf.overlayModal removeFromSuperview];
+        weakSelf.overlayModal = nil;
     };
-    [self presentOverlayCard:picker];
+    [self showOverlay:picker];
 }
 
-- (void)windowPaneDidTapLayout:(AppWindowPane *)pane {
-    [self openLayoutSheet];
-}
-
-- (void)windowPaneDidTapClose:(AppWindowPane *)pane {
-    [self windowPaneDidTapTitle:pane];
-}
-
-- (void)openLayoutSheet {
-    SplitLayoutSheetView *sheet = [[SplitLayoutSheetView alloc] initWithCurrentMode:self.layoutMode];
+- (void)paneDidRequestLayoutSheet:(MultiTaskPaneView *)pane {
+    SidePlayLayoutModal *sheet = [[SidePlayLayoutModal alloc] initWithMode:self.splitMode];
     __weak typeof(self) weakSelf = self;
-    sheet.onDismiss = ^{
-        [weakSelf.activeModalOverlay removeFromSuperview];
-        weakSelf.activeModalOverlay = nil;
+    sheet.onClose = ^{
+        [weakSelf.overlayModal removeFromSuperview];
+        weakSelf.overlayModal = nil;
     };
-    sheet.onSelectMode = ^(SplitLayoutMode mode) {
-        [weakSelf applySplitLayout:mode];
-        [weakSelf.activeModalOverlay removeFromSuperview];
-        weakSelf.activeModalOverlay = nil;
+    sheet.onPickMode = ^(SidePlaySplitMode mode) {
+        [weakSelf rebuildWorkspaceLayout:mode];
+        [weakSelf.overlayModal removeFromSuperview];
+        weakSelf.overlayModal = nil;
     };
-    sheet.onQuickLaunch = ^(NSString *bundleID) {
-        InstalledAppItem *app = [weakSelf appByBundle:bundleID];
-        if (app) [weakSelf.panes[0] hostApplication:app];
-        [weakSelf.activeModalOverlay removeFromSuperview];
-        weakSelf.activeModalOverlay = nil;
+    sheet.onQuickPreset = ^{
+        [weakSelf rebuildWorkspaceLayout:SidePlaySplitDual];
+        for (InstalledAppItem *item in weakSelf.deviceApps) {
+            if ([item.bundleID containsString:@"youtube"]) [weakSelf.panes[0] openAppInPane:item];
+            if ([item.bundleID containsString:@"vietmap"] || [item.bundleID containsString:@"Maps"]) [weakSelf.panes[1] openAppInPane:item];
+        }
+        [weakSelf.overlayModal removeFromSuperview];
+        weakSelf.overlayModal = nil;
     };
-    [self presentOverlayCard:sheet];
+    [self showOverlay:sheet];
+}
+
+- (void)paneDidRequestToggleFull:(MultiTaskPaneView *)pane {
+    [self paneDidRequestLayoutSheet:pane];
 }
 
 @end
 
-#pragma mark - Tab 1 & Tab 4
+#pragma mark - Tab 2: "Tren xe" (Giong het anh 1: CARPLAY & TUY CHINH)
 
-@interface HomeListController : UITableViewController
+@interface CarSettingsViewController : UITableViewController
+@end
+
+@implementation CarSettingsViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Trên xe";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 90, 0);
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return s == 0 ? @"CARPLAY" : @"TUỲ CHỈNH";
+}
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    return s == 0 ? 3 : 8;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    if (ip.section == 0) {
+        if (ip.row == 0) {
+            [self styleCell:cell icon:@"car.fill" color:[UIColor systemBlueColor] title:@"Mở khi kết nối CarPlay" detail:nil];
+            UISwitch *sw = [[UISwitch alloc] init];
+            sw.on = YES;
+            cell.accessoryView = sw;
+        } else if (ip.row == 1) {
+            [self styleCell:cell icon:@"arrow.counterclockwise" color:[UIColor systemIndigoColor] title:@"Mở lại bố cục lần cuối" detail:nil];
+            cell.textLabel.textColor = [UIColor secondaryLabelColor];
+            cell.accessoryView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock.fill"]];
+            cell.accessoryView.tintColor = [UIColor systemGray2Color];
+        } else {
+            [self styleCell:cell icon:@"power" color:[UIColor systemPurpleColor] title:@"Tự làm tối màn hình" detail:nil];
+            cell.accessoryView = [[UISwitch alloc] init];
+        }
+    } else {
+        NSArray *rows = @[
+            @[@"speedometer", [UIColor systemOrangeColor], @"Bong bóng tốc độ", @""],
+            @[@"waveform", [UIColor systemPurpleColor], @"Trợ lí SideStaff", @"LOCK"],
+            @[@"sparkles", [UIColor systemGreenColor], @"Đèn SideLed", @"Chưa kết nối"],
+            @[@"macwindow", [UIColor systemGrayColor], @"Thanh tab ứng dụng", @"5 giây"],
+            @[@"sparkles.rectangle.stack.fill", [UIColor systemBlueColor], @"Mở nhanh", @""],
+            @[@"rectangle.split.2x1", [UIColor systemCyanColor], @"Màn hình trên xe", @""],
+            @[@"square.grid.2x2.fill", [UIColor systemIndigoColor], @"Ứng dụng", @"Tất cả"],
+            @[@"wrench.and.screwdriver.fill", [UIColor systemGrayColor], @"Tuỳ chỉnh", @""]
+        ];
+        NSArray *r = rows[ip.row];
+        [self styleCell:cell icon:r[0] color:r[1] title:r[2] detail:r[3]];
+        if ([r[3] isEqualToString:@"LOCK"]) {
+            cell.detailTextLabel.text = @"";
+            cell.textLabel.textColor = [UIColor secondaryLabelColor];
+            cell.accessoryView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"lock.fill"]];
+            cell.accessoryView.tintColor = [UIColor systemGray2Color];
+        } else {
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
+    }
+    return cell;
+}
+
+- (void)styleCell:(UITableViewCell *)cell icon:(NSString *)ic color:(UIColor *)col title:(NSString *)t detail:(NSString *)d {
+    cell.textLabel.text = t;
+    cell.textLabel.font = [UIFont systemFontOfSize:15.5 weight:UIFontWeightMedium];
+    if (d && d.length > 0) cell.detailTextLabel.text = d;
+
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(30, 30), NO, 0.0);
+    [col setFill];
+    [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(0, 0, 30, 30) cornerRadius:7] fill];
+    UIImage *sym = [[UIImage systemImageNamed:ic] imageWithTintColor:[UIColor whiteColor] renderingMode:UIImageRenderingModeAlwaysOriginal];
+    [sym drawInRect:CGRectMake(5, 5, 20, 20)];
+    cell.imageView.image = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+}
+
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+}
+
+@end
+
+#pragma mark - Tab 4: "Tai khoan" (Giong het anh 3: SidePro, Giao dien, Respring...)
+
+@interface AccountProViewController : UITableViewController
+@end
+
+@implementation AccountProViewController
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.title = @"Tài khoản";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 90, 0);
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 5; }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s {
+    if (s == 0 || s == 1) return 1;
+    if (s == 2 || s == 3) return 3;
+    return 2;
+}
+- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)s {
+    return s == 4 ? @"XemYouTube (SidePlay2 UI) 2.2.0" : nil;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
+    if (ip.section == 0) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+        cell.textLabel.text = @"SidePro · SideMonth";
+        cell.textLabel.font = [UIFont boldSystemFontOfSize:16];
+        cell.detailTextLabel.text = @"Còn 29 ngày (Đã kích hoạt)";
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        cell.imageView.image = [UIImage systemImageNamed:@"creditcard.fill"];
+        cell.imageView.tintColor = [UIColor systemBlueColor];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        return cell;
+    }
+    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
+    if (ip.section == 1) {
+        cell.textLabel.text = @"Mua SidePro";
+        cell.imageView.image = [UIImage systemImageNamed:@"creditcard.circle.fill"];
+        cell.imageView.tintColor = [UIColor systemOrangeColor];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (ip.section == 2) {
+        NSArray *items = @[
+            @[@"circle.lefthalf.filled", [UIColor systemIndigoColor], @"Giao diện", @"Sáng"],
+            @[@"globe", [UIColor systemBlueColor], @"Ngôn ngữ", @"Tiếng Việt"],
+            @[@"gauge.with.dots.needle.67percent", [UIColor systemGreenColor], @"Chế độ máy", @"Mượt"]
+        ];
+        NSArray *r = items[ip.row];
+        cell.imageView.image = [UIImage systemImageNamed:r[0]];
+        cell.imageView.tintColor = r[1];
+        cell.textLabel.text = r[2];
+        cell.detailTextLabel.text = r[3];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else if (ip.section == 3) {
+        NSArray *items = @[
+            @[@"bell.fill", [UIColor systemRedColor], @"Thông báo"],
+            @[@"questionmark.square.fill", [UIColor systemBlueColor], @"Câu hỏi thường gặp"],
+            @[@"ladybug.fill", [UIColor systemGrayColor], @"Báo cáo lỗi"]
+        ];
+        NSArray *r = items[ip.row];
+        cell.imageView.image = [UIImage systemImageNamed:r[0]];
+        cell.imageView.tintColor = r[1];
+        cell.textLabel.text = r[2];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else {
+        if (ip.row == 0) {
+            cell.textLabel.text = @"Respring";
+            cell.textLabel.textColor = [UIColor systemBlueColor];
+        } else {
+            cell.textLabel.text = @"Đặt lại tất cả cài đặt";
+            cell.textLabel.textColor = [UIColor systemRedColor];
+        }
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    if (ip.section == 4 && ip.row == 0) {
+        pid_t pid;
+        const char *args[] = {"killall", "-9", "SpringBoard", NULL};
+        posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+        posix_spawn(&pid, "/var/jb/usr/bin/killall", NULL, NULL, (char *const *)args, environ);
+    }
+}
+
+@end
+
+#pragma mark - Tab 1: "Trang chu"
+
+@interface HomeLauncherViewController : UITableViewController
 @property (nonatomic, strong) NSArray<InstalledAppItem *> *apps;
 @end
 
-@implementation HomeListController
+@implementation HomeLauncherViewController
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = @"Trang chủ";
     self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.apps = GetInstalledApps();
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+    self.tableView.contentInset = UIEdgeInsetsMake(0, 0, 90, 0);
+    self.apps = ScanDeviceApps();
+}
+- (NSString *)tableView:(UITableView *)tv titleForHeaderInSection:(NSInteger)s {
+    return @"CHẠM ĐỂ MỞ TRONG ĐA CỬA SỐ MÔ PHỎNG";
 }
 - (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.apps.count; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
     InstalledAppItem *a = self.apps[ip.row];
     cell.textLabel.text = a.name;
+    cell.textLabel.font = [UIFont boldSystemFontOfSize:15];
     cell.detailTextLabel.text = a.bundleID;
     cell.imageView.image = a.icon;
+    cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     return cell;
 }
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
@@ -1105,58 +1295,124 @@ typedef NS_ENUM(NSInteger, SplitLayoutMode) {
 }
 @end
 
-@interface AccountSettingsController : UITableViewController
+#pragma mark - Custom Floating Pill TabBarController (Giong het thanh 4 tab noi o day anh)
+
+@interface FloatingPillTabBarController : UITabBarController
+@property (nonatomic, strong) UIView *pillBar;
+@property (nonatomic, strong) NSMutableArray<UIButton *> *tabButtons;
 @end
 
-@implementation AccountSettingsController
+@implementation FloatingPillTabBarController
+
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Tài khoản";
-    self.navigationController.navigationBar.prefersLargeTitles = YES;
-    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+    self.tabBar.hidden = YES;
+
+    UINavigationController *vc0 = [[UINavigationController alloc] initWithRootViewController:[[HomeLauncherViewController alloc] init]];
+    UINavigationController *vc1 = [[UINavigationController alloc] initWithRootViewController:[[CarSettingsViewController alloc] init]];
+    SimulationViewController *vc2 = [[SimulationViewController alloc] init];
+    UINavigationController *vc3 = [[UINavigationController alloc] initWithRootViewController:[[AccountProViewController alloc] init]];
+
+    self.viewControllers = @[vc0, vc1, vc2, vc3];
+    [self buildFloatingPillBar];
+    [self switchToTab:2];
 }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return 2; }
-- (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
-    if (ip.row == 0) {
-        cell.textLabel.text = @"Phiên bản";
-        cell.detailTextLabel.text = @"2.1.6 (Full Split & Scene Host)";
-    } else {
-        cell.textLabel.text = @"Ứng dụng đã quét trên máy";
-        cell.detailTextLabel.text = [NSString stringWithFormat:@"%lu app", (unsigned long)GetInstalledApps().count];
+
+- (void)buildFloatingPillBar {
+    self.pillBar = [[UIView alloc] init];
+    self.pillBar.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.96];
+    self.pillBar.layer.cornerRadius = 28;
+    self.pillBar.layer.shadowColor = [UIColor blackColor].CGColor;
+    self.pillBar.layer.shadowOpacity = 0.10;
+    self.pillBar.layer.shadowRadius = 12;
+    self.pillBar.layer.shadowOffset = CGSizeMake(0, 4);
+    self.pillBar.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.pillBar];
+
+    UIStackView *stack = [[UIStackView alloc] init];
+    stack.distribution = UIStackViewDistributionFillEqually;
+    stack.spacing = 6;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.pillBar addSubview:stack];
+
+    NSArray *titles = @[@"Trang chủ", @"Trên xe", @"Mô phỏng", @"Tài khoản"];
+    NSArray *icons  = @[@"house.fill", @"car.fill", @"play.rectangle.fill", @"person.crop.circle.fill"];
+    self.tabButtons = [NSMutableArray array];
+
+    for (NSInteger i = 0; i < 4; i++) {
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.tag = i;
+        btn.layer.cornerRadius = 22;
+
+        UIStackView *vStack = [[UIStackView alloc] init];
+        vStack.axis = UILayoutConstraintAxisVertical;
+        vStack.alignment = UIStackViewAlignmentCenter;
+        vStack.spacing = 3;
+        vStack.userInteractionEnabled = NO;
+        vStack.translatesAutoresizingMaskIntoConstraints = NO;
+
+        UIImageView *iv = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:icons[i]]];
+        iv.tag = 101;
+        iv.contentMode = UIViewContentModeScaleAspectFit;
+        [iv.widthAnchor constraintEqualToConstant:22].active = YES;
+        [iv.heightAnchor constraintEqualToConstant:22].active = YES;
+
+        UILabel *lbl = [[UILabel alloc] init];
+        lbl.tag = 102;
+        lbl.text = titles[i];
+        lbl.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
+
+        [vStack addArrangedSubview:iv];
+        [vStack addArrangedSubview:lbl];
+        [btn addSubview:vStack];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [vStack.centerXAnchor constraintEqualToAnchor:btn.centerXAnchor],
+            [vStack.centerYAnchor constraintEqualToAnchor:btn.centerYAnchor]
+        ]];
+
+        [btn addTarget:self action:@selector(onPillTabTap:) forControlEvents:UIControlEventTouchUpInside];
+        [stack addArrangedSubview:btn];
+        [self.tabButtons addObject:btn];
     }
-    return cell;
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.pillBar.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+        [self.pillBar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [self.pillBar.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-4],
+        [self.pillBar.heightAnchor constraintEqualToConstant:62],
+
+        [stack.topAnchor constraintEqualToAnchor:self.pillBar.topAnchor constant:5],
+        [stack.bottomAnchor constraintEqualToAnchor:self.pillBar.bottomAnchor constant:-5],
+        [stack.leadingAnchor constraintEqualToAnchor:self.pillBar.leadingAnchor constant:6],
+        [stack.trailingAnchor constraintEqualToAnchor:self.pillBar.trailingAnchor constant:-6]
+    ]];
 }
-@end
 
-#pragma mark - MainTabBar & Scene Delegates
-
-@interface MainTabBarController : UITabBarController
-@end
-
-@implementation MainTabBarController
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.tabBar.tintColor = [UIColor systemBlueColor];
-
-    UINavigationController *t1 = [[UINavigationController alloc] initWithRootViewController:[[HomeListController alloc] init]];
-    t1.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trang chủ" image:[UIImage systemImageNamed:@"house"] selectedImage:[UIImage systemImageNamed:@"house.fill"]];
-
-    MultiWindowWorkspaceViewController *t2 = [[MultiWindowWorkspaceViewController alloc] init];
-    t2.isCarScreen = YES;
-    t2.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Trên xe" image:[UIImage systemImageNamed:@"car"] selectedImage:[UIImage systemImageNamed:@"car.fill"]];
-
-    MultiWindowWorkspaceViewController *t3 = [[MultiWindowWorkspaceViewController alloc] init];
-    t3.isCarScreen = NO;
-    t3.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Mô phỏng" image:[UIImage systemImageNamed:@"play.rectangle"] selectedImage:[UIImage systemImageNamed:@"play.rectangle.fill"]];
-
-    UINavigationController *t4 = [[UINavigationController alloc] initWithRootViewController:[[AccountSettingsController alloc] init]];
-    t4.tabBarItem = [[UITabBarItem alloc] initWithTitle:@"Tài khoản" image:[UIImage systemImageNamed:@"person.crop.circle"] selectedImage:[UIImage systemImageNamed:@"person.crop.circle.fill"]];
-
-    self.viewControllers = @[t1, t2, t3, t4];
-    self.selectedIndex = 2;
+- (void)onPillTabTap:(UIButton *)sender {
+    [self switchToTab:sender.tag];
 }
+
+- (void)switchToTab:(NSInteger)idx {
+    self.selectedIndex = idx;
+    UIColor *activeBlue = [UIColor colorWithRed:0.04 green:0.52 blue:1.0 alpha:1.0];
+    UIColor *activeBg   = [UIColor colorWithRed:0.86 green:0.93 blue:1.0 alpha:1.0];
+    UIColor *inactiveGr = [UIColor colorWithWhite:0.45 alpha:1.0];
+
+    for (NSInteger i = 0; i < self.tabButtons.count; i++) {
+        UIButton *b = self.tabButtons[i];
+        BOOL sel = (i == idx);
+        b.backgroundColor = sel ? activeBg : [UIColor clearColor];
+        UIImageView *iv = [b viewWithTag:101];
+        UILabel *lbl = [b viewWithTag:102];
+        iv.tintColor = sel ? activeBlue : inactiveGr;
+        lbl.textColor = sel ? activeBlue : inactiveGr;
+    }
+}
+
 @end
+
+#pragma mark - CarPlay & Phone Scene Delegates
 
 @interface CarPlaySceneDelegate : UIResponder <CPTemplateApplicationSceneDelegate>
 @property (nonatomic, strong) CPWindow *carWindow;
@@ -1165,9 +1421,9 @@ typedef NS_ENUM(NSInteger, SplitLayoutMode) {
 @implementation CarPlaySceneDelegate
 - (void)templateApplicationScene:(CPTemplateApplicationScene *)s didConnectInterfaceController:(CPInterfaceController *)ic toWindow:(CPWindow *)window {
     self.carWindow = window;
-    MultiWindowWorkspaceViewController *vc = [[MultiWindowWorkspaceViewController alloc] init];
-    vc.isCarScreen = YES;
-    window.rootViewController = vc;
+    SimulationViewController *carSim = [[SimulationViewController alloc] init];
+    carSim.isCarPlayWindow = YES;
+    window.rootViewController = carSim;
     [window makeKeyAndVisible];
 }
 @end
@@ -1180,7 +1436,8 @@ typedef NS_ENUM(NSInteger, SplitLayoutMode) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     if (![scene isKindOfClass:[UIWindowScene class]]) return;
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-    self.window.rootViewController = [[MainTabBarController alloc] init];
+    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+    self.window.rootViewController = [[FloatingPillTabBarController alloc] init];
     [self.window makeKeyAndVisible];
 }
 @end
