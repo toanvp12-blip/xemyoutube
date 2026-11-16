@@ -501,7 +501,7 @@ static NSArray<AppPreset *> *DefaultPresets(void) {
     } else {
         if (indexPath.row == 0) {
             cell.textLabel.text = @"Phiên bản";
-            cell.detailTextLabel.text = @"2.1.3 (SidePlay UI)";
+            cell.detailTextLabel.text = @"2.1.4 (SidePlay UI)";
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
         } else {
             cell.textLabel.text = @"Trạng thái CarPlay";
