@@ -12,26 +12,110 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Theos
-        uses: theos/theos-action@v1
-      - name: Compile Rootful & Rootless debs
+
+      - name: Install Theos, Swift Toolchain & iOS SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses5
+          
+          # Cai dat Swift toolchain cho Ubuntu
+          SWIFT_URL="https://download.swift.org/swift-5.10.1-release/ubuntu2404/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu24.04.tar.gz"
+          curl -fsSL "$SWIFT_URL" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz -C /usr/local --strip-components=1
+          rm -f swift.tar.gz
+
+          # Tai Theos va iOS SDK
+          export THEOS=/opt/theos
+          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+          unzip -q sdks.zip
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
+          rm -rf sdks.zip sdks-master
+
+          # Cai dat ldid de ky ma ung dung iOS
+          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
+
+      - name: Compile Rootful, Rootless & RootHide debs
+        env:
+          THEOS: /opt/theos
         run: |
           cd src
           chmod +x layout/DEBIAN/postinst
+          mkdir -p ../public/debs2
+
+          # 1. Bien dich Rootful (iphoneos-arm)
           make clean && make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+
+          # 2. Bien dich Rootless (iphoneos-arm64)
+          make clean && THEOS_PACKAGE_
+$wfFile = "$PWD\.github\workflows\update-repo.yml"
+$buildYml = @'
+name: Build & Update APT Repo
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - '.github/workflows/update-repo.yml'
+permissions:
+  contents: write
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Theos, Swift Toolchain & iOS SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git curl build-essential fakeroot unzip zstd dpkg-dev clang libncurses5
+          
+          # Cai dat Swift toolchain cho Ubuntu
+          SWIFT_URL="https://download.swift.org/swift-5.10.1-release/ubuntu2404/swift-5.10.1-RELEASE/swift-5.10.1-RELEASE-ubuntu24.04.tar.gz"
+          curl -fsSL "$SWIFT_URL" -o swift.tar.gz
+          sudo tar -xzf swift.tar.gz -C /usr/local --strip-components=1
+          rm -f swift.tar.gz
+
+          # Tai Theos va iOS SDK
+          export THEOS=/opt/theos
+          sudo git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS
+          curl -fsSL "https://github.com/theos/sdks/archive/master.zip" -o sdks.zip
+          unzip -q sdks.zip
+          sudo mv sdks-master/*.sdk $THEOS/sdks/
+          rm -rf sdks.zip sdks-master
+
+          # Cai dat ldid de ky ma ung dung iOS
+          sudo curl -fsSL "https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_linux_x86_64" -o /usr/local/bin/ldid
+          sudo chmod +x /usr/local/bin/ldid
+
+      - name: Compile Rootful, Rootless & RootHide debs
+        env:
+          THEOS: /opt/theos
+        run: |
+          cd src
+          chmod +x layout/DEBIAN/postinst
+          mkdir -p ../public/debs2
+
+          # 1. Bien dich Rootful (iphoneos-arm)
+          make clean && make package FINALPACKAGE=1
+          cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm.deb
+
+          # 2. Bien dich Rootless (iphoneos-arm64)
           make clean && THEOS_PACKAGE_SCHEME=rootless make package FINALPACKAGE=1
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64.deb
           cp packages/*.deb ../public/debs2/com.xemyoutube_2.1.3_iphoneos-arm64e.deb
+
       - name: Fix RootHide Architecture & Build APT Index
         run: |
-          sudo apt-get update && sudo apt-get install -y zstd dpkg-dev
           cd public/debs2
           mkdir -p tmp_rh
           dpkg-deb -R com.xemyoutube_2.1.3_iphoneos-arm64e.deb tmp_rh
           sed -i "s/^Architecture:.*/Architecture: iphoneos-arm64e/" tmp_rh/DEBIAN/control
           dpkg-deb -b tmp_rh com.xemyoutube_2.1.3_iphoneos-arm64e.deb
           rm -rf tmp_rh
+
           cd ..
           dpkg-scanpackages -m debs2 > Packages
           gzip -9c Packages > Packages.gz
@@ -54,6 +138,7 @@ jobs:
            $(sha256sum Packages.gz | cut -d' ' -f1) $(wc -c < Packages.gz) Packages.gz
            $(sha256sum Packages.zst | cut -d' ' -f1) $(wc -c < Packages.zst) Packages.zst
           EOF
+
       - name: Commit & Push compiled debs
         run: |
           git config user.name "github-actions[bot]"
