@@ -602,7 +602,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 
     [NSLayoutConstraint activateConstraints:@[
         [bigTitle.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:10], [bigTitle.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],
-        [self.outerFrame.topAnchor constraintEqualToAnchor:bigTitle.bottomAnchor constant:12], [self.outerFrame.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:14], [self.outerFrame.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-14], [self.outerFrame.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-76]
+        [self.outerFrame.topAnchor constraintEqualToAnchor:bigTitle.bottomAnchor constant:12], [self.outerFrame.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:14], [self.outerFrame.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-14], [self.outerFrame.heightAnchor constraintEqualToAnchor:self.outerFrame.widthAnchor multiplier:0.94]
     ]];
 
     for (NSInteger i = 1; i <= 4; i++) {
@@ -709,16 +709,37 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @end
 @implementation HomeLauncherViewController
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title = @"Trang chủ"; self.navigationController.navigationBar.prefersLargeTitles = YES; self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped]; self.apps = ScanDeviceApps();
+    [super viewDidLoad];
+    self.title = @"XemYouTube";
+    self.navigationController.navigationBar.prefersLargeTitles = YES;
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStyleInsetGrouped];
+    self.tableView.backgroundColor = [UIColor colorWithRed:0.95 green:0.95 blue:0.97 alpha:1];
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 110;
+    UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 350, 250)];
+    UIView *card = [UIView new]; card.backgroundColor = [UIColor colorWithRed:0.10 green:0.21 blue:0.36 alpha:1]; card.layer.cornerRadius = 22; card.translatesAutoresizingMaskIntoConstraints = NO;
+    [header addSubview:card];
+    UILabel *name = [UILabel new]; name.text = @"XemYouTube\nCARPLAY WORKSPACE"; name.numberOfLines = 2; name.textColor = UIColor.whiteColor; name.font = [UIFont boldSystemFontOfSize:23]; name.translatesAutoresizingMaskIntoConstraints = NO; [card addSubview:name];
+    UILabel *status = [UILabel new]; status.text = @"Bản phát triển\nChưa xác minh chạy app gốc"; status.numberOfLines = 2; status.textColor = [UIColor colorWithWhite:0.8 alpha:1]; status.font = [UIFont systemFontOfSize:15]; status.translatesAutoresizingMaskIntoConstraints = NO; [card addSubview:status];
+    [NSLayoutConstraint activateConstraints:@[[card.leadingAnchor constraintEqualToAnchor:header.leadingAnchor constant:16], [card.trailingAnchor constraintEqualToAnchor:header.trailingAnchor constant:-16], [card.topAnchor constraintEqualToAnchor:header.topAnchor constant:16], [card.bottomAnchor constraintEqualToAnchor:header.bottomAnchor constant:-12], [name.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:22], [name.topAnchor constraintEqualToAnchor:card.topAnchor constant:24], [status.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:22], [status.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-24]]];
+    self.tableView.tableHeaderView = header;
 }
-- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)s { return self.apps.count; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tv { return 2; }
+- (NSInteger)tableView:(UITableView *)tv numberOfRowsInSection:(NSInteger)section { return 1; }
 - (UITableViewCell *)tableView:(UITableView *)tv cellForRowAtIndexPath:(NSIndexPath *)ip {
-    UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    InstalledAppItem *a = self.apps[ip.row]; cell.textLabel.text = a.name; cell.detailTextLabel.text = a.bundleID; cell.imageView.image = a.icon; cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    return cell;
+    UITableViewCell *c = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    c.textLabel.text = ip.section == 0 ? @"Không gian CarPlay" : @"Có gì mới";
+    c.textLabel.font = [UIFont boldSystemFontOfSize:20];
+    c.detailTextLabel.text = ip.section == 0 ? @"Mở tab Mô phỏng để chọn bố cục" : @"Giao diện đang được hoàn thiện theo ảnh mẫu";
+    c.detailTextLabel.numberOfLines = 0;
+    c.imageView.image = [UIImage systemImageNamed:ip.section == 0 ? @"rectangle.split.2x1" : @"sparkles"];
+    c.imageView.tintColor = UIColor.systemBlueColor;
+    c.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    return c;
 }
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
-    [tv deselectRowAtIndexPath:ip animated:YES]; self.tabBarController.selectedIndex = 2;
+    [tv deselectRowAtIndexPath:ip animated:YES];
+    self.tabBarController.selectedIndex = 2;
 }
 @end
 
@@ -758,7 +779,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
         [[SimulationViewController alloc] init],
         [[UINavigationController alloc] initWithRootViewController:[[AccountProViewController alloc] init]]
     ];
-    [self buildBar]; [self switchToTab:2];
+    [self buildBar]; [self switchToTab:0];
 }
 - (void)buildBar {
     self.pillBar = [[UIView alloc] init]; self.pillBar.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.96]; self.pillBar.layer.cornerRadius = 28; self.pillBar.translatesAutoresizingMaskIntoConstraints = NO;
@@ -802,6 +823,7 @@ typedef NS_ENUM(NSInteger, SidePlaySplitMode) {
 @implementation AppDelegate
 - (BOOL)application:(UIApplication * )application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
     self.window.rootViewController = [[FloatingPillTabBarController alloc] init];
     [self.window makeKeyAndVisible];
     return YES;
