@@ -2,13 +2,13 @@ Package: com.xemyoutube
 Version: 2.7.0
 Architecture: iphoneos-arm64e
 Maintainer: XemYouTube
-Installed-Size: 320
+Installed-Size: 352
 Depends: firmware (>= 15.0), mobilesubstrate
 Filename: debs2/com.xemyoutube_2.7.0_iphoneos-arm64e.deb
-Size: 47336
-MD5sum: db0d486721981a59a788b4d960d3137b
-SHA1: 1869cf1b5fc8a893d00a4281d028e1102eaff0f3
-SHA256: 6bd7cb231defafb347ba751a12e798882c6affe889e62f76d77c73aef96384b9
+Size: 48616
+MD5sum: a67c05f30090fc57818972f2c43c9936
+SHA1: e0e48a0f6c3eb4efa6ed4c87b606f54dcf6e9f46
+SHA256: e07dc7ed4826253f54213e62e2dd77f9390290d739778accc51f64c2c449ce34
 Section: Tweaks
 Description: Chay song song app goc da cua so y nhu SidePlay2
 Author: XemYouTube
@@ -18,13 +18,13 @@ Package: com.xemyoutube
 Version: 2.7.0
 Architecture: iphoneos-arm
 Maintainer: XemYouTube
-Installed-Size: 320
+Installed-Size: 352
 Depends: firmware (>= 15.0), mobilesubstrate
 Filename: debs2/com.xemyoutube_2.7.0_iphoneos-arm.deb
-Size: 47376
-MD5sum: d17e5045fe091d6f332c11b15e4767da
-SHA1: 63ce14e2150123a85ea05e6f941181839371b933
-SHA256: 3e5c0b0abca887624274cd6a57ca71dc0028ea1e98933b35d0760d08909b347c
+Size: 48428
+MD5sum: 067bf4a2a5da59b0b9f596167391bc31
+SHA1: 1b2a04a746cc2fbc8ad4cf94874e8a6273c55d8f
+SHA256: c765a4d05d81246f8a1ef15b75d40a308fde7b492f0702571441eea9beacd200
 Section: Tweaks
 Description: Chay song song app goc da cua so y nhu SidePlay2
 Author: XemYouTube
@@ -34,13 +34,13 @@ Package: com.xemyoutube
 Version: 2.7.0
 Architecture: iphoneos-arm64
 Maintainer: XemYouTube
-Installed-Size: 320
+Installed-Size: 352
 Depends: firmware (>= 15.0), mobilesubstrate
 Filename: debs2/com.xemyoutube_2.7.0_iphoneos-arm64.deb
-Size: 47336
-MD5sum: cb6d427f3a27ee4c8fbf91f9f24ee55d
-SHA1: 7d959cbef414b71606656e18a8169b3e9d568718
-SHA256: ea72adb466c9e08ca674e97886dc1cec46ba2ceab67fa9b9a95f837b768c348f
+Size: 48616
+MD5sum: ea4c2196c785aad5ae3853f57a17e434
+SHA1: 76d3717f3f05d050ce108c3d64f83143de980758
+SHA256: 3f9c2b79c02d40b3fb487cab799dfe828ed737fa51bd1549afe35257cf25e345
 Section: Tweaks
 Description: Chay song song app goc da cua so y nhu SidePlay2
 Author: XemYouTube
