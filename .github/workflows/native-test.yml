@@ -1,0 +1,82 @@
+name: Build native simulation test
+on:
+  push:
+    branches: [fix/native-simulation-test]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rootless-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-latest]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare Theos on macOS
+        if: runner.os == 'macOS'
+        run: |
+          brew install ldid dpkg xz
+          git clone --depth=1 --recursive https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+          sdk_path="$(xcrun --sdk iphoneos --show-sdk-path)"
+          sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+          mkdir -p "$RUNNER_TEMP/theos/sdks"
+          ln -s "$sdk_path" "$RUNNER_TEMP/theos/sdks/iPhoneOS$sdk_version.sdk"
+      - name: Prepare Theos on Linux
+        if: runner.os == 'Linux'
+        env:
+          THEOS: ${{ runner.temp }}/theos
+          CI: "true"
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot rsync curl perl zip git libxml2 libtinfo6 xz-utils dpkg-dev
+          curl -fL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos -o "$RUNNER_TEMP/install-theos.sh"
+          bash "$RUNNER_TEMP/install-theos.sh"
+      - name: Prepare isolated test package
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib
+          root = pathlib.Path("src")
+          for file in ("control", "layout/DEBIAN/control"):
+              path = root / file
+              text = path.read_text()
+              text = text.replace("Version: 2.7.0", "Version: 2.7.1~native1")
+              path.write_text(text)
+          path = root / "Resources/Info.plist"
+          data = plistlib.loads(path.read_bytes())
+          # This Objective-C build has no PhoneSceneDelegate or CarPlaySceneDelegate.
+          data.pop("UIApplicationSceneManifest", None)
+          data.pop("UIBackgroundModes", None)
+          data["CFBundleShortVersionString"] = "2.7.1"
+          data["CFBundleVersion"] = "27101"
+          path.write_bytes(plistlib.dumps(data))
+          PY
+          chmod 755 src/layout/DEBIAN/postinst
+      - name: Compile rootless app and SpringBoard host
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: |
+          set -o pipefail
+          make -C src package THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1 2>&1 | tee native-build.log
+      - name: Verify package includes app and native host
+        run: |
+          set -e
+          for package in src/packages/*.deb; do
+            dpkg-deb -c "$package" > native-package-contents.txt
+            python3 - <<'PY'
+          from pathlib import Path
+          listing = Path("native-package-contents.txt").read_text()
+          for entry in ("var/jb/Applications/XemYouTube.app/XemYouTube", "var/jb/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.dylib", "var/jb/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.plist"):
+              assert entry in listing, entry
+          PY
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: XemYouTube-native-rootless-test-${{ runner.os }}
+          path: |
+            src/packages/*.deb
+            native-build.log
+            native-package-contents.txt

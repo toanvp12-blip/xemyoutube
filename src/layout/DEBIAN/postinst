@@ -1,12 +1,6 @@
 #!/bin/sh
-rm -f /Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
-rm -f /var/jb/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
-rm -f /var/containers/Bundle/Application/.jbroot-*/Library/MobileSubstrate/DynamicLibraries/XemYouTubeSB.* >/dev/null 2>&1 || true
-
-killall -9 XemYouTube >/dev/null 2>&1 || true
+# Never remove XemYouTubeSB here: this test package includes the SpringBoard host.
 if [ -x /var/jb/usr/bin/uicache ]; then
-    /var/jb/usr/bin/uicache -p /var/jb/Applications/XemYouTube.app >/dev/null 2>&1 || /var/jb/usr/bin/uicache -a >/dev/null 2>&1 || true
-elif [ -x /usr/bin/uicache ]; then
-    /usr/bin/uicache -p /Applications/XemYouTube.app >/dev/null 2>&1 || /usr/bin/uicache -a >/dev/null 2>&1 || true
+    /var/jb/usr/bin/uicache -p /var/jb/Applications/XemYouTube.app || true
 fi
 exit 0
